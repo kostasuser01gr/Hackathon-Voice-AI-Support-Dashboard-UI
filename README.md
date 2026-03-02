@@ -1,36 +1,160 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# voice-to-action-agent
 
-## Getting Started
+Production-like hackathon SaaS demo built with Next.js App Router + TypeScript + Tailwind.
 
-First, run the development server:
+It converts browser voice transcript or typed text into:
+- transcript
+- concise executive summary
+- action item list
+- email draft
+- audit trail timeline
+- meta diagnostics (`requestId`, model, latency, validation, fallback)
+
+## Features
+
+- Strict structured JSON output using Gemini + JSON Schema + Zod
+- Server-side-only Gemini integration (`@google/genai`)
+- Deterministic safety checks for grounded output
+- Rate limiting + request size and length limits
+- Voice mode (Web Speech API) with auto text fallback
+- Simulated voice mode for demo reliability
+- Export Center (copy/download markdown, json, txt)
+- History pages (`/history`, `/history/[id]`)
+- Settings page with diagnostics + performance panel
+- Integrations page with safe mock connectors
+
+## Tech Stack
+
+- Next.js (App Router)
+- TypeScript
+- Tailwind CSS
+- Zod
+- Gemini SDK: `@google/genai`
+- Vitest
+
+## Pages
+
+- `/` main dashboard
+- `/history` session list with search/filter
+- `/history/[id]` prefilled detail view
+- `/settings` preferences + diagnostics
+- `/integrations` mock integration cards
+
+## API Routes
+
+- `POST /api/process`
+- `GET /api/health`
+- `GET /api/history` (db mode)
+- `GET /api/history/[id]` (db mode)
+
+## Environment Variables
+
+Required:
+- `GEMINI_API_KEY`
+
+Optional:
+- `APP_BASE_URL`
+- `HISTORY_MODE` = `local` | `db` (default `local`)
+- `RATE_LIMIT_PER_MIN` (default `20`)
+- `MAX_INPUT_CHARS` (default `2000`)
+- `DATABASE_URL` (required only when `HISTORY_MODE=db`)
+
+See `.env.local.example`.
+
+## Local Run
+
+```bash
+npm install
+cp .env.local.example .env.local
+# fill GEMINI_API_KEY in .env.local
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+## Scripts
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
+npm run start
+npm run lint
+npm run test
+npm run eval
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Structured Output Design
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. `/api/process` validates request with Zod.
+2. Gemini is called server-side with `responseJsonSchema` matching the full response contract.
+3. Model JSON is validated with strict Zod schema.
+4. Deterministic safety checks run on summary/tasks/email.
+5. Final response includes ordered fields and meta diagnostics.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## History Mode
 
-## Learn More
+### Local mode (default)
+- Stores latest 25 sessions in localStorage.
+- Includes stable storage schema with migration handling.
 
-To learn more about Next.js, take a look at the following resources:
+### DB mode
+- Uses Postgres via `lib/db.ts`.
+- `sessions` table columns:
+  - `id uuid pk`
+  - `created_at`
+  - `input_mode`
+  - `transcript`
+  - `summary`
+  - `tasks jsonb`
+  - `email_draft text`
+  - `audit_trail jsonb`
+  - `meta jsonb`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+To enable DB mode:
+1. Set `HISTORY_MODE=db`
+2. Set `DATABASE_URL`
+3. Start app; table is auto-created on first write
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Export Usage
 
-## Deploy on Vercel
+From dashboard Export Center:
+- Copy Markdown
+- Copy JSON
+- Copy Text
+- Download `.md`
+- Download `.json`
+- Download `.txt`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Demo Script (90s)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See `docs/demo-script.md`.
+
+## Deployment (Vercel)
+
+1. Push repo to GitHub.
+2. Import project in Vercel.
+3. Set env vars in project settings.
+4. Deploy.
+
+If using DB mode, also provision Postgres (Neon / Vercel Postgres / Supabase) and set `DATABASE_URL`.
+
+## Judging Highlights
+
+- Strict schema-first AI output path (model + server validation)
+- Safety-focused deterministic post-processing
+- Transparent audit trail and request metadata
+- Robust demo UX with voice fallback and simulated mode
+- Dual persistence mode architecture (local + db)
+
+## Docs
+
+- `docs/architecture.md`
+- `docs/demo-script.md`
+- `docs/qa-checklist.md`
+
+## Screenshot Placeholders
+
+- `docs/screenshots/dashboard-main.png`
+- `docs/screenshots/history-list.png`
+- `docs/screenshots/settings-diagnostics.png`
+- `docs/screenshots/export-center.png`

@@ -1,0 +1,879 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+
+import { buildJsonExport, buildMarkdownExport, buildTextExport } from "@/lib/export";
+import {
+  getLocalHistoryServerSnapshot,
+  getLocalHistorySnapshot,
+  saveLocalSession,
+  subscribeLocalHistory,
+  type StoredSession,
+} from "@/lib/history";
+import { DEFAULT_PRESET_ID, PRESETS, type PresetId } from "@/lib/presets";
+import {
+  getUserSettingsServerSnapshot,
+  getUserSettingsSnapshot,
+  patchUserSettings,
+  subscribeUserSettings,
+} from "@/lib/userSettings";
+import {
+  ApiErrorSchema,
+  HealthResponseSchema,
+  type HealthResponse,
+  type InputMode,
+  type ProcessResponse,
+  ProcessResponseSchema,
+} from "@/lib/schema";
+
+type RecognitionEventLike = {
+  results: ArrayLike<{
+    0: {
+      transcript: string;
+    };
+  }>;
+};
+
+type RecognitionErrorLike = {
+  error?: string;
+};
+
+type RecognitionInstance = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: RecognitionEventLike) => void) | null;
+  onerror: ((event: RecognitionErrorLike) => void) | null;
+  onend: (() => void) | null;
+};
+
+type RecognitionConstructor = new () => RecognitionInstance;
+
+type Toast = {
+  type: "success" | "error";
+  message: string;
+};
+
+type VoiceActionDashboardProps = {
+  initialSession?: StoredSession | null;
+};
+
+const SAMPLE_SCRIPT = `Hi team, quick standup update. We finished the onboarding tooltip flow and fixed the profile save bug. Priya will ship analytics tracking by Thursday. I will prepare release notes and share them by Friday noon. Please schedule a 20-minute QA sync tomorrow morning, and send the customer success team a short status email after that meeting.`;
+
+function formatTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return timestamp;
+  }
+
+  return date.toLocaleString();
+}
+
+function createSessionId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function emptyStateIllustration() {
+  return (
+    <div className="flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
+      <div className="w-full max-w-xs">
+        <div className="mb-3 h-5 w-24 rounded bg-slate-200" />
+        <div className="mb-2 h-3 w-full rounded bg-slate-200" />
+        <div className="mb-4 h-3 w-10/12 rounded bg-slate-200" />
+        <div className="grid grid-cols-3 gap-2">
+          <div className="h-10 rounded-xl bg-cyan-200" />
+          <div className="h-10 rounded-xl bg-indigo-200" />
+          <div className="h-10 rounded-xl bg-emerald-200" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkeletonCard({ title }: { title: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-slate-400">
+        {title}
+      </h3>
+      <div className="mt-3 animate-pulse space-y-2">
+        <div className="h-3 w-full rounded bg-slate-200" />
+        <div className="h-3 w-11/12 rounded bg-slate-200" />
+        <div className="h-3 w-9/12 rounded bg-slate-200" />
+      </div>
+    </div>
+  );
+}
+
+export function VoiceActionDashboard({
+  initialSession = null,
+}: VoiceActionDashboardProps) {
+  const recognitionRef = useRef<RecognitionInstance | null>(null);
+  const localHistory = useSyncExternalStore(
+    subscribeLocalHistory,
+    getLocalHistorySnapshot,
+    getLocalHistoryServerSnapshot,
+  );
+  const userSettings = useSyncExternalStore(
+    subscribeUserSettings,
+    getUserSettingsSnapshot,
+    getUserSettingsServerSnapshot,
+  );
+
+  const [inputMode, setInputMode] = useState<InputMode>(
+    initialSession?.data.inputMode ?? "text",
+  );
+  const [typedText, setTypedText] = useState(initialSession?.data.transcript ?? "");
+  const [liveTranscript, setLiveTranscript] = useState(
+    initialSession?.data.transcript ?? "",
+  );
+  const [result, setResult] = useState<ProcessResponse | null>(
+    initialSession?.data ?? null,
+  );
+  const [editableEmailDraft, setEditableEmailDraft] = useState(
+    initialSession?.data.actions.emailDraft ?? "",
+  );
+  const [selectedPresetId, setSelectedPresetId] = useState<PresetId>(
+    initialSession?.presetId ?? userSettings.defaultPreset ?? DEFAULT_PRESET_ID,
+  );
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [micPermission, setMicPermission] = useState<
+    "unknown" | "granted" | "denied" | "prompt" | "unsupported"
+  >("unknown");
+  const [isListening, setIsListening] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [errorAuditTrail, setErrorAuditTrail] = useState<ProcessResponse["auditTrail"]>(
+    [],
+  );
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [healthError, setHealthError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadHealth = async () => {
+      try {
+        const response = await fetch("/api/health", { cache: "no-store" });
+        const payload = (await response.json()) as unknown;
+        const parsed = HealthResponseSchema.safeParse(payload);
+
+        if (!cancelled) {
+          if (parsed.success) {
+            setHealth(parsed.data);
+            setHealthError("");
+          } else {
+            setHealthError("Diagnostics unavailable.");
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setHealthError("Could not load diagnostics.");
+        }
+      }
+    };
+
+    loadHealth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const speechWindow = window as Window & {
+      SpeechRecognition?: RecognitionConstructor;
+      webkitSpeechRecognition?: RecognitionConstructor;
+    };
+
+    const Constructor =
+      speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+
+    if (!Constructor) {
+      setSpeechSupported(false);
+      setMicPermission("unsupported");
+      setInputMode("text");
+      return;
+    }
+
+    setSpeechSupported(true);
+
+    const recognition = new Constructor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = userSettings.language || "en-US";
+
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((entry) => entry[0]?.transcript ?? "")
+        .join(" ")
+        .trim();
+
+      setLiveTranscript(transcript);
+      setTypedText(transcript);
+    };
+
+    recognition.onerror = (event) => {
+      const message = event.error
+        ? `Voice capture error (${event.error}). Switched to text fallback.`
+        : "Voice capture error. Switched to text fallback.";
+      setErrorMessage(message);
+      setInputMode("text");
+      setIsListening(false);
+      setToast({ type: "error", message });
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+
+    if (typeof navigator !== "undefined" && "permissions" in navigator) {
+      navigator.permissions
+        .query({ name: "microphone" as PermissionName })
+        .then((status) => {
+          setMicPermission(status.state);
+          status.onchange = () => setMicPermission(status.state);
+        })
+        .catch(() => setMicPermission("unknown"));
+    }
+
+    return () => {
+      recognition.stop();
+      recognitionRef.current = null;
+    };
+  }, [userSettings.language]);
+
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const transcriptPreview = useMemo(() => {
+    if (result?.transcript) {
+      return result.transcript;
+    }
+
+    return liveTranscript;
+  }, [liveTranscript, result?.transcript]);
+
+  const outputAuditTrail = result?.auditTrail?.length ? result.auditTrail : errorAuditTrail;
+
+  const status = useMemo(() => {
+    if (errorMessage) {
+      return "Error";
+    }
+
+    if (loading) {
+      return "Processing";
+    }
+
+    if (isListening) {
+      return "Listening";
+    }
+
+    return "Idle";
+  }, [errorMessage, isListening, loading]);
+
+  const statusPillClass =
+    status === "Listening"
+      ? "bg-emerald-100 text-emerald-700"
+      : status === "Processing"
+        ? "bg-cyan-100 text-cyan-700"
+        : status === "Error"
+          ? "bg-rose-100 text-rose-700"
+          : "bg-slate-100 text-slate-700";
+
+  const processingDisabled =
+    loading || !health?.diagnostics.geminiKeyPresent || Boolean(healthError);
+
+  const markdownExport = result ? buildMarkdownExport(result) : "";
+  const jsonExport = result ? buildJsonExport(result) : "";
+  const textExport = result ? buildTextExport(result) : "";
+
+  const showToast = (type: Toast["type"], message: string) => {
+    setToast({ type, message });
+  };
+
+  const startListening = () => {
+    if (!recognitionRef.current) {
+      setInputMode("text");
+      setErrorMessage("Web Speech API is unavailable. Using text fallback.");
+      showToast("error", "Web Speech API unavailable.");
+      return;
+    }
+
+    setInputMode("voice");
+    setErrorMessage("");
+    setErrorAuditTrail([]);
+    recognitionRef.current.start();
+    setIsListening(true);
+  };
+
+  const stopListening = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+  };
+
+  const clearAll = () => {
+    setTypedText("");
+    setLiveTranscript("");
+    setResult(null);
+    setEditableEmailDraft("");
+    setErrorMessage("");
+    setErrorAuditTrail([]);
+  };
+
+  const copyText = async (label: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("success", `${label} copied.`);
+    } catch {
+      showToast("error", `Failed to copy ${label.toLowerCase()}.`);
+    }
+  };
+
+  const downloadFile = (filename: string, content: string, mimeType: string) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const processInput = async (mode: InputMode) => {
+    const text =
+      mode === "voice" ? liveTranscript.trim() || typedText.trim() : typedText.trim();
+
+    if (!text) {
+      setErrorMessage("Transcript is empty. Add text or capture voice first.");
+      showToast("error", "Transcript is empty.");
+      return;
+    }
+
+    if (!health?.diagnostics.geminiKeyPresent) {
+      const message = "GEMINI_API_KEY is missing. Processing is disabled.";
+      setErrorMessage(message);
+      showToast("error", message);
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage("");
+    setErrorAuditTrail([]);
+
+    try {
+      const response = await fetch("/api/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-store-history": userSettings.storeHistory ? "true" : "false",
+        },
+        body: JSON.stringify({
+          inputMode: mode,
+          text,
+          presetId: selectedPresetId,
+        }),
+      });
+
+      const payload = (await response.json()) as unknown;
+
+      if (!response.ok) {
+        const parsedError = ApiErrorSchema.safeParse(payload);
+        if (parsedError.success) {
+          setErrorMessage(parsedError.data.error.message);
+          setErrorAuditTrail(parsedError.data.auditTrail ?? []);
+
+          if (parsedError.data.meta?.latencyMs != null) {
+            patchUserSettings({
+              lastLatencyMs: parsedError.data.meta.latencyMs,
+              lastValidation: parsedError.data.meta.validation ?? "failed",
+            });
+          }
+
+          showToast("error", parsedError.data.error.message);
+        } else {
+          setErrorMessage("Request failed with unknown error format.");
+          showToast("error", "Unknown request error.");
+        }
+
+        return;
+      }
+
+      const parsed = ProcessResponseSchema.safeParse(payload);
+      if (!parsed.success) {
+        setErrorMessage("Server response did not match expected schema.");
+        showToast("error", "Invalid server response schema.");
+        return;
+      }
+
+      const processed = parsed.data;
+      setResult(processed);
+      setEditableEmailDraft(processed.actions.emailDraft);
+      setInputMode(mode);
+
+      patchUserSettings({
+        lastLatencyMs: processed.meta.latencyMs,
+        lastValidation: processed.meta.validation,
+      });
+
+      if (userSettings.storeHistory && health?.diagnostics.historyMode === "local") {
+        saveLocalSession({
+          id: createSessionId(),
+          createdAt: new Date().toISOString(),
+          presetId: selectedPresetId,
+          data: processed,
+        });
+      }
+
+      showToast("success", "Processing completed.");
+    } catch {
+      setErrorMessage("Network error while contacting /api/process.");
+      showToast("error", "Network error while processing.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const latestSessionText =
+    localHistory.length > 0
+      ? `${localHistory.length} local session${localHistory.length > 1 ? "s" : ""}`
+      : "No local sessions yet";
+
+  return (
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#d9f5ff_0%,#f5f9ff_35%,#f7f6ff_60%,#ffffff_100%)] px-4 py-6 text-slate-900 md:px-8">
+      <div className="mx-auto max-w-7xl">
+        <header className="mb-6 rounded-3xl border border-white/60 bg-white/80 p-5 shadow-[0_10px_40px_rgba(15,23,42,0.08)] backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-700">
+                Voice to Action Agent
+              </p>
+              <h1 className="mt-1 text-3xl font-semibold">voice-to-action-agent</h1>
+              <p className="mt-1 text-sm text-slate-600">{latestSessionText}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${statusPillClass}`}
+              >
+                {status}
+              </span>
+              <button
+                type="button"
+                onClick={() => processInput(inputMode)}
+                disabled={processingDisabled}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                Process
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsExportOpen(true)}
+                disabled={!result}
+                className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
+              >
+                Export
+              </button>
+              <Link
+                href="/history"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                History
+              </Link>
+              <Link
+                href="/settings"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Settings
+              </Link>
+              <Link
+                href="/integrations"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Integrations
+              </Link>
+            </div>
+          </div>
+        </header>
+
+        {(!health?.diagnostics.geminiKeyPresent || healthError) && (
+          <div className="mb-4 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            {healthError ||
+              "GEMINI_API_KEY is missing. Processing is disabled until configured."}
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="mb-4 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            {errorMessage}
+          </div>
+        )}
+
+        <div className="grid gap-6 lg:grid-cols-[1.08fr_1fr]">
+          <section className="space-y-4 rounded-3xl border border-white/60 bg-white/80 p-5 shadow-[0_8px_32px_rgba(15,23,42,0.08)] backdrop-blur">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold">Input Controls</h2>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTypedText(SAMPLE_SCRIPT);
+                      setLiveTranscript(SAMPLE_SCRIPT);
+                      setInputMode("text");
+                    }}
+                    className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-800"
+                  >
+                    Try sample script
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInputMode("voice");
+                      setLiveTranscript(SAMPLE_SCRIPT);
+                      setTypedText(SAMPLE_SCRIPT);
+                      showToast("success", "Simulated voice transcript loaded.");
+                    }}
+                    className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-800"
+                  >
+                    Simulated voice mode
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearAll}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <label
+                htmlFor="preset"
+                className="mb-1 block text-sm font-semibold text-slate-700"
+              >
+                Preset Template
+              </label>
+              <select
+                id="preset"
+                value={selectedPresetId}
+                onChange={(event) => setSelectedPresetId(event.target.value as PresetId)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-cyan-400"
+              >
+                {PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-700">Voice controls</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Mic permission: {micPermission} {speechSupported ? "" : "(unsupported)"}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={!speechSupported || isListening || loading || processingDisabled}
+                  onClick={startListening}
+                  className="rounded-xl bg-cyan-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-cyan-300"
+                >
+                  Start
+                </button>
+                <button
+                  type="button"
+                  disabled={!isListening || loading}
+                  onClick={stopListening}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  Stop
+                </button>
+                <button
+                  type="button"
+                  onClick={() => processInput("voice")}
+                  disabled={processingDisabled}
+                  className="rounded-xl border border-cyan-300 bg-white px-4 py-2 text-sm font-semibold text-cyan-900 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
+                >
+                  Run voice transcript
+                </button>
+                <a
+                  href="#text-fallback"
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+                >
+                  Use text fallback
+                </a>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <label
+                htmlFor="transcript-preview"
+                className="mb-1 block text-sm font-semibold text-slate-700"
+              >
+                Transcript
+              </label>
+              <textarea
+                id="transcript-preview"
+                readOnly
+                value={transcriptPreview}
+                placeholder="Transcript appears here..."
+                className="h-40 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none"
+              />
+            </div>
+
+            <div id="text-fallback" className="rounded-2xl border border-slate-200 bg-white p-4">
+              <label
+                htmlFor="text-input"
+                className="mb-1 block text-sm font-semibold text-slate-700"
+              >
+                Text fallback
+              </label>
+              <textarea
+                id="text-input"
+                value={typedText}
+                onChange={(event) => {
+                  setTypedText(event.target.value);
+                  setInputMode("text");
+                }}
+                maxLength={health?.diagnostics.maxInputChars ?? 2000}
+                placeholder="Type or paste transcript text..."
+                className="h-44 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none focus:border-cyan-400"
+              />
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-xs text-slate-500">
+                  {typedText.length}/{health?.diagnostics.maxInputChars ?? 2000}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => processInput("text")}
+                  disabled={processingDisabled}
+                  className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                >
+                  Run
+                </button>
+              </div>
+            </div>
+
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900">
+              Do not send automatically. Always review extracted actions and draft content before sending.
+            </p>
+          </section>
+
+          <section className="space-y-4 rounded-3xl border border-white/60 bg-white/80 p-5 shadow-[0_8px_32px_rgba(15,23,42,0.08)] backdrop-blur">
+            {loading ? (
+              <>
+                <SkeletonCard title="Summary" />
+                <SkeletonCard title="Tasks" />
+                <SkeletonCard title="Email Draft" />
+                <SkeletonCard title="Audit Trail" />
+              </>
+            ) : !result ? (
+              <>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-slate-500">
+                    Summary
+                  </h3>
+                  <p className="mt-2 text-sm text-slate-500">
+                    No processed output yet.
+                  </p>
+                </div>
+                {emptyStateIllustration()}
+              </>
+            ) : (
+              <>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-slate-500">
+                    Summary
+                  </h3>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">
+                    {result.summary}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-slate-500">
+                      Tasks
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyText(
+                          "Tasks",
+                          result.actions.taskList.map((task) => `- ${task}`).join("\n"),
+                        )
+                      }
+                      className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700"
+                    >
+                      Copy tasks
+                    </button>
+                  </div>
+                  <ul className="mt-3 space-y-2 text-sm text-slate-800">
+                    {result.actions.taskList.map((task, index) => (
+                      <li key={`${task}-${index}`} className="flex items-start gap-2">
+                        <input type="checkbox" className="mt-0.5 h-4 w-4" />
+                        <span>{task}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-slate-500">
+                      Email Draft
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => copyText("Email Draft", editableEmailDraft)}
+                      className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <textarea
+                    value={editableEmailDraft}
+                    onChange={(event) => setEditableEmailDraft(event.target.value)}
+                    className="mt-3 h-52 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm"
+                  />
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-slate-500">
+                    Audit Trail
+                  </h3>
+                  <ol className="mt-3 space-y-2">
+                    {outputAuditTrail.map((item, index) => (
+                      <li
+                        key={`${item.step}-${item.timestamp}-${index}`}
+                        className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                      >
+                        <p className="text-sm font-semibold text-slate-800">{item.step}</p>
+                        <p className="text-xs text-slate-500">
+                          {formatTimestamp(item.timestamp)}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-700">{item.details}</p>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      </div>
+
+      {isExportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Export Center</h2>
+              <button
+                type="button"
+                onClick={() => setIsExportOpen(false)}
+                className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-semibold text-slate-700"
+              >
+                Close
+              </button>
+            </div>
+            <p className="mb-4 text-sm text-slate-600">
+              Export data from the latest processed session. Sensitive server secrets are never included.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                disabled={!result}
+                onClick={() => copyText("Markdown", markdownExport)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                Copy Markdown
+              </button>
+              <button
+                type="button"
+                disabled={!result}
+                onClick={() => copyText("JSON", jsonExport)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                Copy JSON
+              </button>
+              <button
+                type="button"
+                disabled={!result}
+                onClick={() => copyText("Text", textExport)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                Copy Text
+              </button>
+              <button
+                type="button"
+                disabled={!result}
+                onClick={() =>
+                  downloadFile("voice-to-action-export.md", markdownExport, "text/markdown")
+                }
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                Download .md
+              </button>
+              <button
+                type="button"
+                disabled={!result}
+                onClick={() =>
+                  downloadFile(
+                    "voice-to-action-export.json",
+                    jsonExport,
+                    "application/json",
+                  )
+                }
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                Download .json
+              </button>
+              <button
+                type="button"
+                disabled={!result}
+                onClick={() => downloadFile("voice-to-action-export.txt", textExport, "text/plain")}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                Download .txt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-50">
+          <div
+            className={`rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-lg ${
+              toast.type === "success" ? "bg-emerald-600" : "bg-rose-600"
+            }`}
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

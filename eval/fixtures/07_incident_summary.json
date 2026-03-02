@@ -1,0 +1,1 @@
+{"name":"incident_summary","inputMode":"text","text":"Service outage lasted 12 minutes. Need to publish incident recap and assign postmortem owner.","presetId":"technical_incident_summary","expectsTask":true}
