@@ -197,9 +197,18 @@ export const HealthDiagnosticsSchema = z
     geminiKeyPresent: z.boolean(),
     historyMode: z.enum(["db", "local"]),
     rateLimitPerMin: z.number().int().positive(),
+    rateLimitBurstPer10s: z.number().int().positive(),
     maxInputChars: z.number().int().positive(),
     appBaseUrlConfigured: z.boolean(),
     model: z.string(),
+    promptVersion: z.string(),
+    shareTokenSecretPresent: z.boolean(),
+    observability: z.object({
+      processRequests: z.number().int().nonnegative(),
+      processFailures: z.number().int().nonnegative(),
+      safetyFailures: z.number().int().nonnegative(),
+      averageLatencyMs: z.number().int().nonnegative(),
+    }),
   })
   .strict();
 

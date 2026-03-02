@@ -70,6 +70,8 @@ export default function HistoryDetailPage() {
           session?: {
             id: string;
             createdAt: string;
+            workspaceId?: string;
+            userId?: string;
             presetId?: string;
             data: ProcessResponse;
           };
@@ -84,7 +86,16 @@ export default function HistoryDetailPage() {
           setDbSession({
             id: payload.session.id,
             createdAt: payload.session.createdAt,
+            workspaceId: payload.session.workspaceId ?? "default-workspace",
             presetId: (payload.session.presetId ?? DEFAULT_PRESET_ID) as PresetId,
+            pinned: false,
+            tags: [],
+            review: {
+              emailApproved: false,
+              tasksApproved: false,
+              taskOwners: {},
+              comments: [],
+            },
             data: payload.session.data,
           });
         }

@@ -24,13 +24,17 @@ export async function GET(request: Request) {
   const search = url.searchParams.get("search") ?? undefined;
   const modeParam = url.searchParams.get("mode");
   const mode = modeParam === "voice" || modeParam === "text" ? modeParam : "all";
+  const workspaceId = url.searchParams.get("workspaceId") ?? undefined;
+  const userId = url.searchParams.get("userId") ?? undefined;
 
-  const rows = await listSessions({ search, mode });
+  const rows = await listSessions({ search, mode, workspaceId, userId });
 
   return NextResponse.json({
     sessions: rows.map((row) => ({
       id: row.id,
       createdAt: row.created_at,
+      workspaceId: row.workspace_id,
+      userId: row.user_id,
       inputMode: row.input_mode,
       summarySnippet: row.summary.slice(0, 160),
       actionCount: Array.isArray(row.tasks) ? row.tasks.length : 0,

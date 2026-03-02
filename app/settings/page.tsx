@@ -20,6 +20,7 @@ export default function SettingsPage() {
   );
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState("");
+  const [sessionStatus, setSessionStatus] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +52,30 @@ export default function SettingsPage() {
       cancelled = true;
     };
   }, []);
+
+  const syncSession = async () => {
+    setSessionStatus("Updating session...");
+    try {
+      const response = await fetch("/api/auth/session", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          workspaceId: settings.workspaceId,
+          role: "owner",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Could not update session.");
+      }
+
+      setSessionStatus("Session synced.");
+    } catch {
+      setSessionStatus("Session update failed.");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#d9f5ff_0%,#f5f9ff_35%,#f7f6ff_60%,#ffffff_100%)] px-4 py-6 text-slate-900 md:px-8">
@@ -136,6 +161,71 @@ export default function SettingsPage() {
                 <option value="pro">pro</option>
               </select>
             </label>
+
+            <label className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <span className="mb-1 block text-sm font-semibold">Workspace ID</span>
+              <input
+                value={settings.workspaceId}
+                onChange={(event) => patchUserSettings({ workspaceId: event.target.value })}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              />
+            </label>
+
+            <label className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <span className="mb-1 block text-sm font-semibold">User ID</span>
+              <input
+                value={settings.userId}
+                onChange={(event) => patchUserSettings({ userId: event.target.value })}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              />
+            </label>
+
+            <label className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <span className="mb-1 block text-sm font-semibold">Retention Days</span>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={settings.retentionDays}
+                onChange={(event) =>
+                  patchUserSettings({ retentionDays: Number(event.target.value) || 30 })
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              />
+            </label>
+
+            <label className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <span className="mb-1 block text-sm font-semibold">PII Redaction</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={settings.redactPii}
+                  onChange={(event) =>
+                    patchUserSettings({ redactPii: event.target.checked })
+                  }
+                />
+                <span className="text-sm text-slate-700">
+                  Redact email/phone before processing
+                </span>
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/60 bg-white/80 p-5 shadow-[0_8px_32px_rgba(15,23,42,0.08)]">
+          <h2 className="mb-4 text-xl font-semibold">Workspace Session</h2>
+          <p className="text-sm text-slate-600">
+            Demo auth/workspace cookie for multi-tenant simulation.
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={syncSession}
+              className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900"
+            >
+              Sync session cookie
+            </button>
+            <p className="text-sm text-slate-600">{sessionStatus}</p>
           </div>
         </section>
 
@@ -153,14 +243,31 @@ export default function SettingsPage() {
               </p>
               <p>History mode: {health?.diagnostics.historyMode ?? "unknown"}</p>
               <p>Rate limit/min: {health?.diagnostics.rateLimitPerMin ?? "unknown"}</p>
+              <p>
+                Burst limit/10s: {health?.diagnostics.rateLimitBurstPer10s ?? "unknown"}
+              </p>
               <p>Max input chars: {health?.diagnostics.maxInputChars ?? "unknown"}</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
               <p>Last latency: {settings.lastLatencyMs ?? "-"} ms</p>
               <p>Last validation: {settings.lastValidation ?? "-"}</p>
               <p>Model: {health?.diagnostics.model ?? "unknown"}</p>
+              <p>Prompt version: {health?.diagnostics.promptVersion ?? "unknown"}</p>
               <p>
                 APP_BASE_URL configured: {health?.diagnostics.appBaseUrlConfigured ? "yes" : "no"}
+              </p>
+              <p>
+                Share token secret present:{" "}
+                {health?.diagnostics.shareTokenSecretPresent ? "yes" : "no"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm md:col-span-2">
+              <p className="font-semibold">Observability</p>
+              <p>
+                Requests: {health?.diagnostics.observability.processRequests ?? 0} | Failures:{" "}
+                {health?.diagnostics.observability.processFailures ?? 0} | Safety failures:{" "}
+                {health?.diagnostics.observability.safetyFailures ?? 0} | Avg latency:{" "}
+                {health?.diagnostics.observability.averageLatencyMs ?? 0} ms
               </p>
             </div>
           </div>

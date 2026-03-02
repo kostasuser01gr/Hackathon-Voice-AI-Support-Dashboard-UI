@@ -1,160 +1,185 @@
 # voice-to-action-agent
 
-Production-like hackathon SaaS demo built with Next.js App Router + TypeScript + Tailwind.
+Production-like hackathon SaaS that converts voice transcript or text input into strict structured outputs:
 
-It converts browser voice transcript or typed text into:
 - transcript
-- concise executive summary
-- action item list
+- executive summary
+- action items
 - email draft
-- audit trail timeline
-- meta diagnostics (`requestId`, model, latency, validation, fallback)
+- audit trail
+- meta diagnostics
 
-## Features
+## Live deployment proof (Google Cloud)
 
-- Strict structured JSON output using Gemini + JSON Schema + Zod
-- Server-side-only Gemini integration (`@google/genai`)
-- Deterministic safety checks for grounded output
-- Rate limiting + request size and length limits
-- Voice mode (Web Speech API) with auto text fallback
-- Simulated voice mode for demo reliability
-- Export Center (copy/download markdown, json, txt)
-- History pages (`/history`, `/history/[id]`)
-- Settings page with diagnostics + performance panel
-- Integrations page with safe mock connectors
+- Public URL (incognito): https://chatgpt-ops--hackathon-proof-x3amxlfx.web.app
+- Health URL: https://chatgpt-ops--hackathon-proof-x3amxlfx.web.app/health.json
 
-## Tech Stack
+This is deployed on **Firebase Hosting** (Google Cloud).  
+Cloud Run automation is included in repo (`scripts/deploy.sh`, `cloudbuild.yaml`, `.github/workflows/deploy-gcp.yml`) and can be used once billing is enabled.
 
-- Next.js (App Router)
-- TypeScript
+## Zero to passing tests in under 10 minutes
+
+```bash
+npm install
+cp .env.local.example .env.local
+# set GEMINI_API_KEY in .env.local
+npm run lint
+npm run test
+npm run eval
+npm run build
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+## Tech stack
+
+- Next.js (App Router, TypeScript)
 - Tailwind CSS
 - Zod
-- Gemini SDK: `@google/genai`
+- Gemini SDK `@google/genai`
 - Vitest
+- Optional Postgres (`pg`) for DB history mode
+
+## Core features
+
+- Strict Gemini structured output with JSON Schema + server-side Zod validation
+- Node runtime route handlers (`/app/api/*`) only
+- Browser Web Speech API transcription with automatic text fallback
+- Deterministic safety checks and quality scoring
+- Request limits: body size, max chars, minute and burst rate limits
+- Export center: copy/download Markdown, JSON, TXT, print to PDF
+- Signed share links (`/share/[token]`)
+- Webhook export relay (public HTTPS endpoints only)
+- History mode:
+  - `local` (default, localStorage + migrations + pin/delete)
+  - `db` (Postgres sessions table)
+- Settings diagnostics panel with observability counters
+- Integrations page with safe dry-run background jobs
+- Session intelligence card (topics/entities/open loops)
+- Approval center (task/email approval + reviewer comments)
 
 ## Pages
 
-- `/` main dashboard
-- `/history` session list with search/filter
-- `/history/[id]` prefilled detail view
-- `/settings` preferences + diagnostics
-- `/integrations` mock integration cards
+- `/` dashboard
+- `/history`
+- `/history/[id]`
+- `/settings`
+- `/integrations`
+- `/share/[token]`
+- `/status`
 
-## API Routes
+## API routes
 
 - `POST /api/process`
 - `GET /api/health`
 - `GET /api/history` (db mode)
 - `GET /api/history/[id]` (db mode)
+- `GET|POST|DELETE /api/auth/session`
+- `POST /api/share`
+- `POST /api/export/webhook`
+- `POST /api/integrations/dry-run`
+- `GET /api/integrations/jobs/[id]`
 
-## Environment Variables
+## Structured output contract
+
+`/api/process` returns:
+
+```json
+{
+  "inputMode": "voice | text",
+  "transcript": "string",
+  "summary": "string",
+  "actions": {
+    "taskList": ["string"],
+    "emailDraft": "string"
+  },
+  "auditTrail": [
+    { "step": "capture|transcribe|extract|draft|safety_check", "timestamp": "string", "details": "string" }
+  ],
+  "meta": {
+    "requestId": "string",
+    "model": "string",
+    "latencyMs": 0,
+    "validation": "passed|failed",
+    "fallbackUsed": false
+  }
+}
+```
+
+Validation path:
+1. Request schema validation (Zod)
+2. Gemini response schema enforcement (`responseJsonSchema`)
+3. Zod response validation
+4. Deterministic `safety_check`
+5. Quality scoring and audit notes
+
+## Environment variables
 
 Required:
 - `GEMINI_API_KEY`
 
 Optional:
 - `APP_BASE_URL`
-- `HISTORY_MODE` = `local` | `db` (default `local`)
+- `HISTORY_MODE=local|db` (default `local`)
 - `RATE_LIMIT_PER_MIN` (default `20`)
+- `RATE_LIMIT_BURST_PER_10S` (default `6`)
 - `MAX_INPUT_CHARS` (default `2000`)
+- `PROMPT_VERSION` (default `v1`)
+- `SHARE_TOKEN_SECRET`
 - `DATABASE_URL` (required only when `HISTORY_MODE=db`)
 
 See `.env.local.example`.
 
-## Local Run
+## History mode: local vs db
+
+Local:
+- stores last 25 sessions
+- schema versioned localStorage migration
+- pin/delete/update review metadata
+
+DB:
+- `lib/db.ts` auto-creates and manages `sessions` table
+- includes workspace and user columns
+- API query support for search/mode/workspace/user
+
+## Architecture diagram
+
+- Repo path: `docs/architecture.png`
+- Architecture write-up: `docs/architecture.md`
+- Submission helper: `docs/submission-links.md`
+
+## Deployment automation proof (bonus)
+
+- `scripts/deploy.sh` one-command Cloud Run deploy
+- `cloudbuild.yaml` Cloud Build pipeline deploy
+- `.github/workflows/deploy-gcp.yml` GitHub Actions deploy to GCP
+- `infra/main.tf` Terraform Cloud Run service
+
+## Docker option
 
 ```bash
-npm install
-cp .env.local.example .env.local
-# fill GEMINI_API_KEY in .env.local
-npm run dev
+npm run docker:build
+docker run --rm -p 8080:8080 -e GEMINI_API_KEY=... voice-to-action-agent:local
 ```
 
-Open `http://localhost:3000`.
+## Demo script
 
-## Scripts
+See `docs/demo-script.md` (90-second judge flow).
 
-```bash
-npm run dev
-npm run build
-npm run start
-npm run lint
-npm run test
-npm run eval
-```
+## QA checklist
 
-## Structured Output Design
+See `docs/qa-checklist.md`.
 
-1. `/api/process` validates request with Zod.
-2. Gemini is called server-side with `responseJsonSchema` matching the full response contract.
-3. Model JSON is validated with strict Zod schema.
-4. Deterministic safety checks run on summary/tasks/email.
-5. Final response includes ordered fields and meta diagnostics.
+## Judging highlights
 
-## History Mode
+- Schema-first AI pipeline with strict contract enforcement
+- Deterministic post-model safety layer and audit timeline
+- Observable and reproducible: tests + eval + build + deployment automation
+- Dual persistence architecture (local + db) with session replay
+- Export/share/integration flows designed for safe hackathon demos
 
-### Local mode (default)
-- Stores latest 25 sessions in localStorage.
-- Includes stable storage schema with migration handling.
+## Bonus links placeholders
 
-### DB mode
-- Uses Postgres via `lib/db.ts`.
-- `sessions` table columns:
-  - `id uuid pk`
-  - `created_at`
-  - `input_mode`
-  - `transcript`
-  - `summary`
-  - `tasks jsonb`
-  - `email_draft text`
-  - `audit_trail jsonb`
-  - `meta jsonb`
-
-To enable DB mode:
-1. Set `HISTORY_MODE=db`
-2. Set `DATABASE_URL`
-3. Start app; table is auto-created on first write
-
-## Export Usage
-
-From dashboard Export Center:
-- Copy Markdown
-- Copy JSON
-- Copy Text
-- Download `.md`
-- Download `.json`
-- Download `.txt`
-
-## Demo Script (90s)
-
-See `docs/demo-script.md`.
-
-## Deployment (Vercel)
-
-1. Push repo to GitHub.
-2. Import project in Vercel.
-3. Set env vars in project settings.
-4. Deploy.
-
-If using DB mode, also provision Postgres (Neon / Vercel Postgres / Supabase) and set `DATABASE_URL`.
-
-## Judging Highlights
-
-- Strict schema-first AI output path (model + server validation)
-- Safety-focused deterministic post-processing
-- Transparent audit trail and request metadata
-- Robust demo UX with voice fallback and simulated mode
-- Dual persistence mode architecture (local + db)
-
-## Docs
-
-- `docs/architecture.md`
-- `docs/demo-script.md`
-- `docs/qa-checklist.md`
-
-## Screenshot Placeholders
-
-- `docs/screenshots/dashboard-main.png`
-- `docs/screenshots/history-list.png`
-- `docs/screenshots/settings-diagnostics.png`
-- `docs/screenshots/export-center.png`
+- Published content URL: `TODO`
+- Public GDG profile URL: `TODO`

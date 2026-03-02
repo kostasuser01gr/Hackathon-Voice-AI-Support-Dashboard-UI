@@ -4,14 +4,19 @@ export type AppConfig = {
   appBaseUrl?: string;
   historyMode: HistoryMode;
   rateLimitPerMin: number;
+  rateLimitBurstPer10s: number;
   maxInputChars: number;
   geminiKeyPresent: boolean;
   geminiModel: string;
+  promptVersion: string;
+  shareTokenSecretPresent: boolean;
 };
 
 const DEFAULT_RATE_LIMIT_PER_MIN = 20;
+const DEFAULT_RATE_LIMIT_BURST_PER_10S = 6;
 const DEFAULT_MAX_INPUT_CHARS = 2000;
 export const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
+const DEFAULT_PROMPT_VERSION = "v1";
 
 function parsePositiveInt(
   value: string | undefined,
@@ -45,6 +50,12 @@ export function getAppConfig(): AppConfig {
       1,
       1000,
     ),
+    rateLimitBurstPer10s: parsePositiveInt(
+      process.env.RATE_LIMIT_BURST_PER_10S,
+      DEFAULT_RATE_LIMIT_BURST_PER_10S,
+      1,
+      500,
+    ),
     maxInputChars: parsePositiveInt(
       process.env.MAX_INPUT_CHARS,
       DEFAULT_MAX_INPUT_CHARS,
@@ -53,5 +64,7 @@ export function getAppConfig(): AppConfig {
     ),
     geminiKeyPresent: Boolean(process.env.GEMINI_API_KEY),
     geminiModel: DEFAULT_GEMINI_MODEL,
+    promptVersion: process.env.PROMPT_VERSION?.trim() || DEFAULT_PROMPT_VERSION,
+    shareTokenSecretPresent: Boolean(process.env.SHARE_TOKEN_SECRET),
   };
 }

@@ -7,10 +7,15 @@ import { buildJsonExport, buildMarkdownExport, buildTextExport } from "@/lib/exp
 import {
   getLocalHistoryServerSnapshot,
   getLocalHistorySnapshot,
+  getLocalSessionById,
+  pruneLocalSessions,
   saveLocalSession,
   subscribeLocalHistory,
+  updateLocalSession,
   type StoredSession,
 } from "@/lib/history";
+import { normalizeLanguage, t } from "@/lib/i18n";
+import { deriveTranscriptInsights } from "@/lib/intelligence";
 import { DEFAULT_PRESET_ID, PRESETS, type PresetId } from "@/lib/presets";
 import {
   getUserSettingsServerSnapshot,
@@ -55,6 +60,13 @@ type RecognitionConstructor = new () => RecognitionInstance;
 type Toast = {
   type: "success" | "error";
   message: string;
+};
+
+type SessionIdentity = {
+  name: string;
+  email: string;
+  workspaceId: string;
+  role: "owner" | "admin" | "agent" | "viewer";
 };
 
 type VoiceActionDashboardProps = {
@@ -157,6 +169,27 @@ export function VoiceActionDashboard({
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState("");
+  const [sessionIdentity, setSessionIdentity] = useState<SessionIdentity>({
+    name: "Demo User",
+    email: "demo@voice-action.local",
+    workspaceId: initialSession?.workspaceId ?? userSettings.workspaceId,
+    role: "owner",
+  });
+  const [review, setReview] = useState(
+    initialSession?.review ?? {
+      emailApproved: false,
+      tasksApproved: false,
+      taskOwners: {},
+      comments: [] as string[],
+    },
+  );
+  const [activeLocalSessionId, setActiveLocalSessionId] = useState<string | null>(
+    initialSession?.id ?? null,
+  );
+  const [newComment, setNewComment] = useState("");
+  const [shareUrl, setShareUrl] = useState("");
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookStatus, setWebhookStatus] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -188,6 +221,71 @@ export function VoiceActionDashboard({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSessionIdentity = async () => {
+      try {
+        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        const payload = (await response.json()) as {
+          session?: SessionIdentity;
+        };
+        if (!cancelled && payload.session) {
+          setSessionIdentity(payload.session);
+        }
+      } catch {
+        if (!cancelled) {
+          setSessionIdentity((previous) => ({
+            ...previous,
+            workspaceId: userSettings.workspaceId,
+          }));
+        }
+      }
+    };
+
+    loadSessionIdentity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userSettings.workspaceId]);
+
+  useEffect(() => {
+    setSessionIdentity((previous) => ({
+      ...previous,
+      workspaceId: userSettings.workspaceId,
+    }));
+  }, [userSettings.workspaceId]);
+
+  useEffect(() => {
+    if (initialSession) {
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const from = new URLSearchParams(window.location.search).get("from");
+    if (!from) {
+      return;
+    }
+
+    const source = getLocalSessionById(from);
+    if (!source) {
+      return;
+    }
+
+    setResult(source.data);
+    setEditableEmailDraft(source.data.actions.emailDraft);
+    setLiveTranscript(source.data.transcript);
+    setTypedText(source.data.transcript);
+    setSelectedPresetId(source.presetId);
+    setReview(source.review);
+    setActiveLocalSessionId(source.id);
+    setToast({ type: "success", message: "Loaded session for regeneration." });
+  }, [initialSession]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -267,6 +365,10 @@ export function VoiceActionDashboard({
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  useEffect(() => {
+    pruneLocalSessions(userSettings.retentionDays);
+  }, [userSettings.retentionDays]);
+
   const transcriptPreview = useMemo(() => {
     if (result?.transcript) {
       return result.transcript;
@@ -276,6 +378,15 @@ export function VoiceActionDashboard({
   }, [liveTranscript, result?.transcript]);
 
   const outputAuditTrail = result?.auditTrail?.length ? result.auditTrail : errorAuditTrail;
+  const language = normalizeLanguage(userSettings.language);
+  const insights = useMemo(
+    () =>
+      deriveTranscriptInsights(
+        result?.transcript ?? typedText,
+        result?.actions.taskList ?? [],
+      ),
+    [result?.actions.taskList, result?.transcript, typedText],
+  );
 
   const status = useMemo(() => {
     if (errorMessage) {
@@ -304,6 +415,14 @@ export function VoiceActionDashboard({
 
   const processingDisabled =
     loading || !health?.diagnostics.geminiKeyPresent || Boolean(healthError);
+  const localizedStatus =
+    status === "Listening"
+      ? t(language, "listening")
+      : status === "Processing"
+        ? t(language, "processing")
+        : status === "Error"
+          ? t(language, "error")
+          : t(language, "idle");
 
   const markdownExport = result ? buildMarkdownExport(result) : "";
   const jsonExport = result ? buildJsonExport(result) : "";
@@ -338,8 +457,17 @@ export function VoiceActionDashboard({
     setLiveTranscript("");
     setResult(null);
     setEditableEmailDraft("");
+    setShareUrl("");
+    setWebhookStatus("");
     setErrorMessage("");
     setErrorAuditTrail([]);
+    setActiveLocalSessionId(null);
+    setReview({
+      emailApproved: false,
+      tasksApproved: false,
+      taskOwners: {},
+      comments: [],
+    });
   };
 
   const copyText = async (label: string, text: string) => {
@@ -359,6 +487,81 @@ export function VoiceActionDashboard({
     anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(url);
+  };
+
+  const openPrintView = () => {
+    window.print();
+  };
+
+  const generateShareLink = async () => {
+    if (!result) {
+      return;
+    }
+
+    const sessionPayload: StoredSession = {
+      id: createSessionId(),
+      createdAt: new Date().toISOString(),
+      workspaceId: sessionIdentity.workspaceId,
+      presetId: selectedPresetId,
+      pinned: false,
+      tags: [],
+      review,
+      data: result,
+    };
+
+    try {
+      const response = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sessionPayload),
+      });
+      const payload = (await response.json()) as { token?: string };
+      if (!response.ok || !payload.token) {
+        throw new Error("Could not generate share link.");
+      }
+
+      const base = window.location.origin;
+      const nextUrl = `${base}/share/${payload.token}`;
+      setShareUrl(nextUrl);
+      await navigator.clipboard.writeText(nextUrl);
+      showToast("success", "Share link generated and copied.");
+    } catch {
+      showToast("error", "Failed to generate share link.");
+    }
+  };
+
+  const sendWebhook = async () => {
+    if (!result || !webhookUrl.trim()) {
+      setWebhookStatus("Enter a public HTTPS webhook URL first.");
+      return;
+    }
+
+    setWebhookStatus("Sending webhook...");
+    try {
+      const response = await fetch("/api/export/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          endpoint: webhookUrl.trim(),
+          session: result,
+        }),
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        status?: number;
+        error?: { message?: string };
+      };
+
+      if (!response.ok) {
+        setWebhookStatus(payload.error?.message ?? "Webhook send failed.");
+        return;
+      }
+
+      setWebhookStatus(`Webhook delivered with status ${payload.status ?? "unknown"}.`);
+      showToast("success", "Webhook delivered.");
+    } catch {
+      setWebhookStatus("Webhook send failed due to network error.");
+    }
   };
 
   const processInput = async (mode: InputMode) => {
@@ -388,6 +591,9 @@ export function VoiceActionDashboard({
         headers: {
           "Content-Type": "application/json",
           "x-store-history": userSettings.storeHistory ? "true" : "false",
+          "x-user-id": userSettings.userId,
+          "x-workspace-id": userSettings.workspaceId,
+          "x-redact-pii": userSettings.redactPii ? "true" : "false",
         },
         body: JSON.stringify({
           inputMode: mode,
@@ -430,7 +636,15 @@ export function VoiceActionDashboard({
       const processed = parsed.data;
       setResult(processed);
       setEditableEmailDraft(processed.actions.emailDraft);
+      setShareUrl("");
+      setWebhookStatus("");
       setInputMode(mode);
+      setReview({
+        emailApproved: false,
+        tasksApproved: false,
+        taskOwners: {},
+        comments: [],
+      });
 
       patchUserSettings({
         lastLatencyMs: processed.meta.latencyMs,
@@ -438,12 +652,23 @@ export function VoiceActionDashboard({
       });
 
       if (userSettings.storeHistory && health?.diagnostics.historyMode === "local") {
+        const sessionId = createSessionId();
         saveLocalSession({
-          id: createSessionId(),
+          id: sessionId,
           createdAt: new Date().toISOString(),
+          workspaceId: userSettings.workspaceId,
           presetId: selectedPresetId,
+          pinned: false,
+          tags: [],
+          review: {
+            emailApproved: false,
+            tasksApproved: false,
+            taskOwners: {},
+            comments: [],
+          },
           data: processed,
         });
+        setActiveLocalSessionId(sessionId);
       }
 
       showToast("success", "Processing completed.");
@@ -457,7 +682,7 @@ export function VoiceActionDashboard({
 
   const latestSessionText =
     localHistory.length > 0
-      ? `${localHistory.length} local session${localHistory.length > 1 ? "s" : ""}`
+      ? `${localHistory.length} local session${localHistory.length > 1 ? "s" : ""} in ${userSettings.workspaceId}`
       : "No local sessions yet";
 
   return (
@@ -471,12 +696,15 @@ export function VoiceActionDashboard({
               </p>
               <h1 className="mt-1 text-3xl font-semibold">voice-to-action-agent</h1>
               <p className="mt-1 text-sm text-slate-600">{latestSessionText}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {sessionIdentity.name} ({sessionIdentity.role}) · {sessionIdentity.email}
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={`rounded-full px-3 py-1 text-xs font-semibold ${statusPillClass}`}
               >
-                {status}
+                {localizedStatus}
               </span>
               <button
                 type="button"
@@ -484,7 +712,7 @@ export function VoiceActionDashboard({
                 disabled={processingDisabled}
                 className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
               >
-                Process
+                {t(language, "process")}
               </button>
               <button
                 type="button"
@@ -492,25 +720,31 @@ export function VoiceActionDashboard({
                 disabled={!result}
                 className="rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
               >
-                Export
+                {t(language, "export")}
               </button>
               <Link
                 href="/history"
                 className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
               >
-                History
+                {t(language, "history")}
               </Link>
               <Link
                 href="/settings"
                 className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
               >
-                Settings
+                {t(language, "settings")}
               </Link>
               <Link
                 href="/integrations"
                 className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
               >
-                Integrations
+                {t(language, "integrations")}
+              </Link>
+              <Link
+                href="/status"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Status
               </Link>
             </div>
           </div>
@@ -586,6 +820,39 @@ export function VoiceActionDashboard({
                   </option>
                 ))}
               </select>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                <label className="text-xs text-slate-600">
+                  Workspace ID
+                  <input
+                    value={userSettings.workspaceId}
+                    onChange={(event) =>
+                      patchUserSettings({ workspaceId: event.target.value.trim() || "default-workspace" })
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                  />
+                </label>
+                <label className="text-xs text-slate-600">
+                  User ID
+                  <input
+                    value={userSettings.userId}
+                    onChange={(event) =>
+                      patchUserSettings({ userId: event.target.value.trim() || "demo-user" })
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                  />
+                </label>
+              </div>
+              <label className="mt-2 flex items-center gap-2 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={userSettings.redactPii}
+                  onChange={(event) => patchUserSettings({ redactPii: event.target.checked })}
+                />
+                Redact PII before model call
+              </label>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Prompt version: {health?.diagnostics.promptVersion ?? "unknown"}
+              </p>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -733,8 +1000,34 @@ export function VoiceActionDashboard({
                   <ul className="mt-3 space-y-2 text-sm text-slate-800">
                     {result.actions.taskList.map((task, index) => (
                       <li key={`${task}-${index}`} className="flex items-start gap-2">
-                        <input type="checkbox" className="mt-0.5 h-4 w-4" />
-                        <span>{task}</span>
+                        <input
+                          type="checkbox"
+                          checked={review.tasksApproved}
+                          onChange={(event) =>
+                            setReview((previous) => ({
+                              ...previous,
+                              tasksApproved: event.target.checked,
+                            }))
+                          }
+                          className="mt-0.5 h-4 w-4"
+                        />
+                        <div className="w-full">
+                          <span>{task}</span>
+                          <input
+                            value={review.taskOwners[String(index)] ?? ""}
+                            onChange={(event) =>
+                              setReview((previous) => ({
+                                ...previous,
+                                taskOwners: {
+                                  ...previous.taskOwners,
+                                  [String(index)]: event.target.value,
+                                },
+                              }))
+                            }
+                            placeholder="Owner (collab)"
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
+                          />
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -758,6 +1051,19 @@ export function VoiceActionDashboard({
                     onChange={(event) => setEditableEmailDraft(event.target.value)}
                     className="mt-3 h-52 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm"
                   />
+                  <label className="mt-2 flex items-center gap-2 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={review.emailApproved}
+                      onChange={(event) =>
+                        setReview((previous) => ({
+                          ...previous,
+                          emailApproved: event.target.checked,
+                        }))
+                      }
+                    />
+                    Approved for manual sending
+                  </label>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -778,6 +1084,89 @@ export function VoiceActionDashboard({
                       </li>
                     ))}
                   </ol>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-slate-500">
+                    Session Intelligence
+                  </h3>
+                  <p className="mt-2 text-xs text-slate-600">
+                    Topics: {insights.topics.length ? insights.topics.join(", ") : "none"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Entities: {insights.entities.length ? insights.entities.join(", ") : "none"}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Open loops:{" "}
+                    {insights.openLoops.length ? insights.openLoops.join(" | ") : "none"}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-slate-500">
+                      Approval Center
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!result || !activeLocalSessionId) {
+                          return;
+                        }
+                        updateLocalSession(activeLocalSessionId, { review });
+                        showToast("success", "Approval notes saved.");
+                      }}
+                      className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700"
+                    >
+                      Save approvals
+                    </button>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-700">
+                    <p>
+                      Tasks:{" "}
+                      <span className={review.tasksApproved ? "text-emerald-700" : "text-amber-700"}>
+                        {review.tasksApproved ? "approved" : "pending"}
+                      </span>
+                    </p>
+                    <p>
+                      Email:{" "}
+                      <span className={review.emailApproved ? "text-emerald-700" : "text-amber-700"}>
+                        {review.emailApproved ? "approved" : "pending"}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="mt-2">
+                    <textarea
+                      value={newComment}
+                      onChange={(event) => setNewComment(event.target.value)}
+                      placeholder="Add reviewer note..."
+                      className="h-20 w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const trimmed = newComment.trim();
+                        if (!trimmed) {
+                          return;
+                        }
+                        setReview((previous) => ({
+                          ...previous,
+                          comments: [trimmed, ...previous.comments].slice(0, 8),
+                        }));
+                        setNewComment("");
+                      }}
+                      className="mt-2 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-800"
+                    >
+                      Add comment
+                    </button>
+                    <ul className="mt-2 space-y-1 text-xs text-slate-600">
+                      {review.comments.map((comment, index) => (
+                        <li key={`${comment}-${index}`} className="rounded bg-slate-100 px-2 py-1">
+                          {comment}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               </>
             )}
@@ -858,6 +1247,52 @@ export function VoiceActionDashboard({
               >
                 Download .txt
               </button>
+              <button
+                type="button"
+                disabled={!result}
+                onClick={openPrintView}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                Print to PDF
+              </button>
+              <button
+                type="button"
+                disabled={!result}
+                onClick={generateShareLink}
+                className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-900 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                Generate share link
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-slate-500">
+                Signed share links are demo-safe and do not include secrets.
+              </p>
+              <input
+                value={shareUrl}
+                readOnly
+                placeholder="Share URL appears here"
+                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs"
+              />
+              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                <input
+                  value={webhookUrl}
+                  onChange={(event) => setWebhookUrl(event.target.value)}
+                  placeholder="https://example.com/webhook"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs"
+                />
+                <button
+                  type="button"
+                  disabled={!result}
+                  onClick={sendWebhook}
+                  className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-900 disabled:cursor-not-allowed disabled:text-slate-400"
+                >
+                  Send webhook
+                </button>
+              </div>
+              {webhookStatus && (
+                <p className="text-xs text-slate-600">{webhookStatus}</p>
+              )}
             </div>
           </div>
         </div>

@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "eval": "tsx scripts/eval.ts"
+    "eval": "tsx scripts/eval.ts",
+    "docker:build": "docker build -t voice-to-action-agent:local .",
+    "deploy:gcp": "./scripts/deploy.sh"
   },
   "dependencies": {
     "@google/genai": "^1.43.0",

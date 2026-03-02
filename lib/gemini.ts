@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 
 import { DEFAULT_GEMINI_MODEL } from "@/lib/config";
 import type { Preset } from "@/lib/presets";
-import { buildProcessPrompt, PROCESS_SYSTEM_INSTRUCTION } from "@/lib/prompts";
+import { buildProcessPrompt, getProcessSystemInstruction } from "@/lib/prompts";
 import {
   ProcessResponseJsonSchema,
   ProcessResponseSchema,
@@ -30,6 +30,7 @@ type GenerateStructuredResponseParams = {
   preset: Preset;
   requestId: string;
   model?: string;
+  promptVersion?: string;
 };
 
 export async function generateStructuredResponse(
@@ -43,6 +44,7 @@ export async function generateStructuredResponse(
   }
 
   const model = params.model ?? DEFAULT_GEMINI_MODEL;
+  const promptVersion = params.promptVersion ?? "v1";
   const ai = new GoogleGenAI({ apiKey });
 
   const response = await ai.models.generateContent({
@@ -52,9 +54,10 @@ export async function generateStructuredResponse(
       transcript: params.transcript,
       preset: params.preset,
       requestId: params.requestId,
+      promptVersion,
     }),
     config: {
-      systemInstruction: PROCESS_SYSTEM_INSTRUCTION,
+      systemInstruction: getProcessSystemInstruction(promptVersion),
       responseMimeType: "application/json",
       responseJsonSchema: ProcessResponseJsonSchema,
       temperature: 0.2,

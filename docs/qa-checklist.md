@@ -10,6 +10,7 @@
 ## API
 
 - [ ] `/api/health` returns diagnostics
+- [ ] `/status` public status page renders
 - [ ] `/api/process` enforces max input chars
 - [ ] `/api/process` enforces rate limit
 - [ ] Missing `GEMINI_API_KEY` shows clear UI banner
@@ -25,9 +26,12 @@
 - [ ] Local mode stores and lists sessions
 - [ ] `/history/[id]` opens full prefilled view
 - [ ] Export modal supports copy/download for md/json/txt
+- [ ] Export modal supports signed share link + webhook relay
+- [ ] Approval center saves review notes to local history
 
 ## Quality
 
 - [ ] `npm run lint`
 - [ ] `npm run test`
 - [ ] `npm run eval`
+- [ ] `npm run build`

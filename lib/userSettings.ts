@@ -7,6 +7,10 @@ export type UserSettings = {
   defaultPreset: PresetId;
   language: string;
   tone: UserTone;
+  workspaceId: string;
+  userId: string;
+  redactPii: boolean;
+  retentionDays: number;
   lastLatencyMs: number | null;
   lastValidation: "passed" | "failed" | null;
 };
@@ -19,6 +23,10 @@ const defaultSettings: UserSettings = {
   defaultPreset: "support_recap",
   language: "en-US",
   tone: "neutral",
+  workspaceId: "default-workspace",
+  userId: "demo-user",
+  redactPii: false,
+  retentionDays: 30,
   lastLatencyMs: null,
   lastValidation: null,
 };
@@ -48,6 +56,19 @@ function parseSettings(input: unknown): UserSettings {
         ? obj.language
         : defaultSettings.language,
     tone: obj.tone === "pro" ? "pro" : "neutral",
+    workspaceId:
+      typeof obj.workspaceId === "string" && obj.workspaceId.trim()
+        ? obj.workspaceId
+        : defaultSettings.workspaceId,
+    userId:
+      typeof obj.userId === "string" && obj.userId.trim()
+        ? obj.userId
+        : defaultSettings.userId,
+    redactPii: typeof obj.redactPii === "boolean" ? obj.redactPii : false,
+    retentionDays:
+      typeof obj.retentionDays === "number" && obj.retentionDays >= 1
+        ? Math.min(365, Math.round(obj.retentionDays))
+        : defaultSettings.retentionDays,
     lastLatencyMs:
       typeof obj.lastLatencyMs === "number" && obj.lastLatencyMs >= 0
         ? obj.lastLatencyMs

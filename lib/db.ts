@@ -6,6 +6,8 @@ import type { ProcessResponse } from "@/lib/schema";
 export type DbSessionRecord = {
   id: string;
   created_at: string;
+  workspace_id: string;
+  user_id: string;
   input_mode: ProcessResponse["inputMode"];
   transcript: string;
   summary: string;
@@ -43,6 +45,8 @@ async function ensureInitialized() {
       CREATE TABLE IF NOT EXISTS sessions (
         id uuid PRIMARY KEY,
         created_at timestamptz NOT NULL DEFAULT now(),
+        workspace_id text NOT NULL DEFAULT 'default-workspace',
+        user_id text NOT NULL DEFAULT 'demo-user',
         input_mode text NOT NULL,
         transcript text NOT NULL,
         summary text NOT NULL,
@@ -51,6 +55,15 @@ async function ensureInitialized() {
         audit_trail jsonb NOT NULL,
         meta jsonb NOT NULL
       )
+    `);
+
+    await client.query(`
+      ALTER TABLE sessions
+      ADD COLUMN IF NOT EXISTS workspace_id text NOT NULL DEFAULT 'default-workspace'
+    `);
+    await client.query(`
+      ALTER TABLE sessions
+      ADD COLUMN IF NOT EXISTS user_id text NOT NULL DEFAULT 'demo-user'
     `);
 
     initialized = true;
@@ -72,6 +85,8 @@ export async function insertSession(row: DbSessionRecord) {
       INSERT INTO sessions (
         id,
         created_at,
+        workspace_id,
+        user_id,
         input_mode,
         transcript,
         summary,
@@ -79,11 +94,13 @@ export async function insertSession(row: DbSessionRecord) {
         email_draft,
         audit_trail,
         meta
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
     `,
     [
       row.id,
       row.created_at,
+      row.workspace_id,
+      row.user_id,
       row.input_mode,
       row.transcript,
       row.summary,
@@ -96,6 +113,8 @@ export async function insertSession(row: DbSessionRecord) {
 }
 
 export async function listSessions(params: {
+  workspaceId?: string;
+  userId?: string;
   search?: string;
   mode?: "voice" | "text" | "all";
   limit?: number;
@@ -104,6 +123,16 @@ export async function listSessions(params: {
 
   const values: Array<string | number> = [];
   const conditions: string[] = [];
+
+  if (params.workspaceId?.trim()) {
+    values.push(params.workspaceId.trim());
+    conditions.push(`workspace_id = $${values.length}`);
+  }
+
+  if (params.userId?.trim()) {
+    values.push(params.userId.trim());
+    conditions.push(`user_id = $${values.length}`);
+  }
 
   if (params.mode && params.mode !== "all") {
     values.push(params.mode);
@@ -121,7 +150,7 @@ export async function listSessions(params: {
 
   const result = await getPool().query(
     `
-      SELECT id, created_at, input_mode, transcript, summary, tasks, email_draft, audit_trail, meta
+      SELECT id, created_at, workspace_id, user_id, input_mode, transcript, summary, tasks, email_draft, audit_trail, meta
       FROM sessions
       ${where}
       ORDER BY created_at DESC
@@ -138,7 +167,7 @@ export async function getSessionById(id: string) {
 
   const result = await getPool().query(
     `
-      SELECT id, created_at, input_mode, transcript, summary, tasks, email_draft, audit_trail, meta
+      SELECT id, created_at, workspace_id, user_id, input_mode, transcript, summary, tasks, email_draft, audit_trail, meta
       FROM sessions
       WHERE id = $1
       LIMIT 1

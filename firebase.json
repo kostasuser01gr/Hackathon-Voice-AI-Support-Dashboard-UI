@@ -1,0 +1,10 @@
+{
+  "hosting": {
+    "public": "deploy-proof",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}

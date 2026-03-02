@@ -1,0 +1,27 @@
+substitutions:
+  _SERVICE_NAME: voice-to-action-agent
+  _REGION: europe-west1
+  _AR_REPO: cloud-run-source-deploy
+  _IMAGE: ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE_NAME}:$SHORT_SHA
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_IMAGE}", "."]
+
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE}"]
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --image=${_IMAGE}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --set-env-vars=HISTORY_MODE=local,RATE_LIMIT_PER_MIN=20,MAX_INPUT_CHARS=2000
+
+images:
+  - ${_IMAGE}

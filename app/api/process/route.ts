@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { redactPiiText } from "@/lib/compliance";
 import { getAppConfig } from "@/lib/config";
 import { insertSession } from "@/lib/db";
 import {
@@ -7,8 +8,16 @@ import {
   GeminiConfigError,
   GeminiResponseValidationError,
 } from "@/lib/gemini";
+import {
+  logServerEvent,
+  trackLatency,
+  trackProcessFailure,
+  trackProcessRequest,
+  trackSafetyFailure,
+} from "@/lib/observability";
 import { getPresetById } from "@/lib/presets";
 import { neutralizeProfanity } from "@/lib/profanity";
+import { scoreQuality } from "@/lib/quality";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { runSafetyCheck } from "@/lib/safety";
 import {
@@ -26,6 +35,7 @@ type ProcessDeps = {
   nowMs: () => number;
   requestId: string;
   generateStructuredResponse: typeof generateStructuredResponse;
+  redactPii?: boolean;
 };
 
 class ApiProcessError extends Error {
@@ -112,16 +122,15 @@ export async function processPayload(
   const nowMs = deps.nowMs ?? (() => Date.now());
   const requestId = deps.requestId ?? crypto.randomUUID();
   const startedAt = nowMs();
+  const redactPii = Boolean(deps.redactPii);
 
   const parsed = ProcessRequestSchema.safeParse(payload);
 
   if (!parsed.success) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("[api/process] request validation failed", {
-        requestId,
-        issues: parsed.error.issues,
-      });
-    }
+    logServerEvent("warn", "process.request_validation_failed", {
+      requestId,
+      issues: parsed.error.issues,
+    });
 
     throw new ApiProcessError({
       status: 400,
@@ -163,7 +172,7 @@ export async function processPayload(
   const auditTrail: ProcessAuditEntry[] = [
     makeAuditEntry(
       "capture",
-      `Input captured in ${inputMode} mode with preset '${preset.label}'.`,
+      `Input captured in ${inputMode} mode with preset '${preset.label}' (prompt ${config.promptVersion}).`,
       now,
     ),
     makeAuditEntry(
@@ -201,7 +210,8 @@ export async function processPayload(
   }
 
   const profanity = neutralizeProfanity(transcript);
-  const cleanTranscript = profanity.sanitized;
+  const pii = redactPii ? redactPiiText(profanity.sanitized) : { output: profanity.sanitized, redactions: 0 };
+  const cleanTranscript = pii.output;
 
   let modelOutput: ProcessResponse;
   let modelName = config.geminiModel;
@@ -215,6 +225,7 @@ export async function processPayload(
       preset,
       requestId,
       model: config.geminiModel,
+      promptVersion: config.promptVersion,
     });
 
     modelOutput = generated.output;
@@ -271,6 +282,7 @@ export async function processPayload(
   });
 
   if (!safety.ok) {
+    trackSafetyFailure();
     auditTrail.push(
       makeAuditEntry(
         "safety_check",
@@ -295,12 +307,24 @@ export async function processPayload(
     });
   }
 
+  const quality = scoreQuality({
+    summary: safety.normalized.summary,
+    taskList: safety.normalized.taskList,
+    emailDraft: safety.normalized.emailDraft,
+  });
+
   auditTrail.push(
     makeAuditEntry(
       "safety_check",
-      profanity.replacedCount > 0
-        ? `Passed with profanity-safe normalization (${profanity.replacedCount} replacement(s)).`
-        : "Passed groundedness and output checks.",
+      [
+        profanity.replacedCount > 0
+          ? `Profanity-safe normalization: ${profanity.replacedCount}.`
+          : null,
+        pii.redactions > 0 ? `PII redactions: ${pii.redactions}.` : null,
+        `Quality score: ${quality.score}/100.`,
+      ]
+        .filter(Boolean)
+        .join(" "),
       now,
     ),
   );
@@ -320,7 +344,8 @@ export async function processPayload(
       startedAt,
       nowMs,
       validation: "passed",
-      fallbackUsed: safety.fallbackUsed || profanity.replacedCount > 0,
+      fallbackUsed:
+        safety.fallbackUsed || profanity.replacedCount > 0 || pii.redactions > 0,
     }),
   };
 
@@ -330,15 +355,22 @@ export async function processPayload(
 export async function POST(request: Request) {
   const config = getAppConfig();
   const requestId = crypto.randomUUID();
+  trackProcessRequest();
 
   const clientIp = getClientIp(request);
-  const rateLimit = checkRateLimit(clientIp, config.rateLimitPerMin);
+  const clientIdentity = `${clientIp}:${request.headers.get("x-user-id") ?? "anon"}`;
+  const rateLimit = checkRateLimit(
+    clientIdentity,
+    config.rateLimitPerMin,
+    config.rateLimitBurstPer10s,
+  );
   if (!rateLimit.allowed) {
+    trackProcessFailure();
     return NextResponse.json(
       {
         error: {
           code: "RATE_LIMITED",
-          message: `Rate limit exceeded. Retry in ${rateLimit.retryAfterSeconds}s.`,
+          message: `Rate limit exceeded (${rateLimit.reason ?? "limit"}). Retry in ${rateLimit.retryAfterSeconds}s.`,
           requestId,
         },
       },
@@ -384,14 +416,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await processPayload(payload, { requestId });
+    const redactPii = request.headers.get("x-redact-pii") === "true";
+    const result = await processPayload(payload, { requestId, redactPii });
+    trackLatency(result.meta.latencyMs);
 
     const storeHistory = request.headers.get("x-store-history") !== "false";
+    const workspaceId = request.headers.get("x-workspace-id") ?? "default-workspace";
+    const userId = request.headers.get("x-user-id") ?? "demo-user";
     if (storeHistory && config.historyMode === "db") {
       try {
         await insertSession({
           id: result.meta.requestId,
           created_at: new Date().toISOString(),
+          workspace_id: workspaceId,
+          user_id: userId,
           input_mode: result.inputMode,
           transcript: result.transcript,
           summary: result.summary,
@@ -401,22 +439,26 @@ export async function POST(request: Request) {
           meta: result.meta,
         });
       } catch (error) {
-        if (process.env.NODE_ENV !== "production") {
-          console.error("[api/process] failed to persist DB history", {
-            requestId,
-            error,
-          });
-        }
+        logServerEvent("warn", "process.db_persist_failed", {
+          requestId,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 
     return NextResponse.json(result);
   } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("[api/process] failed", { requestId, error });
-    }
+    trackProcessFailure();
+    logServerEvent("error", "process.failed", {
+      requestId,
+      error: error instanceof Error ? error.message : String(error),
+    });
 
     if (error instanceof Error) {
+      const apiError = error as ApiProcessError;
+      if (apiError.meta?.latencyMs != null) {
+        trackLatency(apiError.meta.latencyMs);
+      }
       return buildErrorResponse(error as ApiProcessError | Error, requestId);
     }
 

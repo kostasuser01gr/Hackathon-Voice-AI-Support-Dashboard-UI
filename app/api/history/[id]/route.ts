@@ -43,6 +43,8 @@ export async function GET(_request: Request, context: RouteParams) {
     session: {
       id: row.id,
       createdAt: row.created_at,
+      workspaceId: row.workspace_id,
+      userId: row.user_id,
       inputMode: row.input_mode,
       presetId: DEFAULT_PRESET_ID,
       data: {
