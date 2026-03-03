@@ -1,4 +1,6 @@
 export type HistoryMode = "db" | "local";
+export type VerifierPolicy = "reject" | "repair" | "warn";
+export type IntegrationsMode = "mock" | "live";
 
 export type AppConfig = {
   appBaseUrl?: string;
@@ -7,9 +9,13 @@ export type AppConfig = {
   rateLimitBurstPer10s: number;
   maxInputChars: number;
   geminiKeyPresent: boolean;
+  demoSafeMode: boolean;
   geminiModel: string;
   promptVersion: string;
   shareTokenSecretPresent: boolean;
+  featureWave1: boolean;
+  verifierPolicy: VerifierPolicy;
+  integrationsMode: IntegrationsMode;
 };
 
 const DEFAULT_RATE_LIMIT_PER_MIN = 20;
@@ -40,6 +46,26 @@ function parseHistoryMode(value: string | undefined): HistoryMode {
   return value === "db" ? "db" : "local";
 }
 
+function parseBoolean(value: string | undefined, fallback = false) {
+  if (!value) {
+    return fallback;
+  }
+
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+function parseVerifierPolicy(value: string | undefined): VerifierPolicy {
+  if (value === "reject" || value === "repair" || value === "warn") {
+    return value;
+  }
+
+  return "warn";
+}
+
+function parseIntegrationsMode(value: string | undefined): IntegrationsMode {
+  return value === "live" ? "live" : "mock";
+}
+
 export function getAppConfig(): AppConfig {
   return {
     appBaseUrl: process.env.APP_BASE_URL,
@@ -63,8 +89,12 @@ export function getAppConfig(): AppConfig {
       10000,
     ),
     geminiKeyPresent: Boolean(process.env.GEMINI_API_KEY),
+    demoSafeMode: parseBoolean(process.env.DEMO_SAFE_MODE, false),
     geminiModel: DEFAULT_GEMINI_MODEL,
     promptVersion: process.env.PROMPT_VERSION?.trim() || DEFAULT_PROMPT_VERSION,
     shareTokenSecretPresent: Boolean(process.env.SHARE_TOKEN_SECRET),
+    featureWave1: parseBoolean(process.env.FEATURE_WAVE1, true),
+    verifierPolicy: parseVerifierPolicy(process.env.VERIFIER_POLICY),
+    integrationsMode: parseIntegrationsMode(process.env.INTEGRATIONS_MODE),
   };
 }

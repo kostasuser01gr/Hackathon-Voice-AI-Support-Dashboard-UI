@@ -101,6 +101,18 @@ export default function SettingsPage() {
               >
                 History
               </Link>
+              <Link
+                href="/actions"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Actions
+              </Link>
+              <Link
+                href="/open-loops"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Open Loops
+              </Link>
             </div>
           </div>
         </header>
@@ -241,6 +253,7 @@ export default function SettingsPage() {
               <p>
                 Gemini key present: {health?.diagnostics.geminiKeyPresent ? "yes" : "no"}
               </p>
+              <p>Demo safe mode: {health?.diagnostics.demoSafeMode ? "enabled" : "disabled"}</p>
               <p>History mode: {health?.diagnostics.historyMode ?? "unknown"}</p>
               <p>Rate limit/min: {health?.diagnostics.rateLimitPerMin ?? "unknown"}</p>
               <p>
@@ -264,10 +277,25 @@ export default function SettingsPage() {
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm md:col-span-2">
               <p className="font-semibold">Observability</p>
               <p>
-                Requests: {health?.diagnostics.observability.processRequests ?? 0} | Failures:{" "}
-                {health?.diagnostics.observability.processFailures ?? 0} | Safety failures:{" "}
-                {health?.diagnostics.observability.safetyFailures ?? 0} | Avg latency:{" "}
-                {health?.diagnostics.observability.averageLatencyMs ?? 0} ms
+                Requests: {health?.diagnostics.observability.processRequests ?? 0} | Successes:{" "}
+                {health?.diagnostics.observability.processSuccesses ?? 0} | Failures:{" "}
+                {health?.diagnostics.observability.processFailures ?? 0}
+              </p>
+              <p>
+                Success rate:{" "}
+                {Math.round((health?.diagnostics.observability.successRate ?? 0) * 100)}% |
+                Safety failures: {health?.diagnostics.observability.safetyFailures ?? 0}
+              </p>
+              <p>
+                Avg latency: {health?.diagnostics.observability.averageLatencyMs ?? 0} ms |
+                P95 latency: {health?.diagnostics.observability.p95LatencyMs ?? 0} ms
+              </p>
+              <p>
+                Integration jobs - queued:{" "}
+                {health?.diagnostics.observability.integrationJobs.queued ?? 0}, completed:{" "}
+                {health?.diagnostics.observability.integrationJobs.completed ?? 0}, failed:{" "}
+                {health?.diagnostics.observability.integrationJobs.failed ?? 0}, retried:{" "}
+                {health?.diagnostics.observability.integrationJobs.retried ?? 0}
               </p>
             </div>
           </div>

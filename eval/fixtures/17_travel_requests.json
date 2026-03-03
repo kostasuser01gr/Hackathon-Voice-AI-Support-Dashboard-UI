@@ -1,0 +1,7 @@
+{
+  "name": "travel-requests",
+  "inputMode": "voice",
+  "text": "Please confirm hotel availability in Athens, send the itinerary to Maria, and book airport transfer.",
+  "presetId": "tourism_travel_client_follow_up",
+  "expectsTask": true
+}

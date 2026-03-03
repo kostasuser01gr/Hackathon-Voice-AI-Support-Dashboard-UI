@@ -1,0 +1,7 @@
+{
+  "name": "low-signal",
+  "inputMode": "text",
+  "text": "Quick check-in. No major updates, everything is stable this week.",
+  "presetId": "project_update",
+  "expectsTask": false
+}

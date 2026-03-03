@@ -1,0 +1,7 @@
+{
+  "name": "minutes-followup",
+  "inputMode": "voice",
+  "text": "Meeting concluded with agreement to finalize scope document next week and schedule stakeholder review.",
+  "presetId": "meeting_minutes",
+  "expectsTask": true
+}

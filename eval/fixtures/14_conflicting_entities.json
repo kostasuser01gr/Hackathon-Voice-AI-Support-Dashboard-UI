@@ -1,0 +1,7 @@
+{
+  "name": "conflicting-entities",
+  "inputMode": "voice",
+  "text": "Nina confirmed with Atlas Corp that the invoice correction must be sent before Friday.",
+  "presetId": "support_recap",
+  "expectsTask": true
+}

@@ -170,6 +170,24 @@ export default function HistoryPage() {
               >
                 Settings
               </Link>
+              <Link
+                href="/actions"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Actions
+              </Link>
+              <Link
+                href="/history/compare"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Compare
+              </Link>
+              <Link
+                href="/open-loops"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Open Loops
+              </Link>
             </div>
           </div>
 

@@ -1,11 +1,13 @@
 import Link from "next/link";
 
 import { getAppConfig } from "@/lib/config";
+import { pingDbConnection } from "@/lib/db";
 import { getObservabilitySnapshot } from "@/lib/observability";
 
-export default function StatusPage() {
+export default async function StatusPage() {
   const config = getAppConfig();
   const metrics = getObservabilitySnapshot();
+  const dbHealthy = config.historyMode === "db" ? await pingDbConnection() : true;
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8">
@@ -17,11 +19,21 @@ export default function StatusPage() {
         <div className="mt-4 space-y-1 text-sm text-slate-800">
           <p>Environment: {process.env.NODE_ENV}</p>
           <p>Gemini key present: {config.geminiKeyPresent ? "yes" : "no"}</p>
+          <p>Demo safe mode: {config.demoSafeMode ? "enabled" : "disabled"}</p>
           <p>History mode: {config.historyMode}</p>
           <p>Rate limit: {config.rateLimitPerMin}/min</p>
           <p>Burst limit: {config.rateLimitBurstPer10s}/10s</p>
           <p>Prompt version: {config.promptVersion}</p>
+          <p>Feature Wave1: {config.featureWave1 ? "enabled" : "disabled"}</p>
+          <p>Verifier policy: {config.verifierPolicy}</p>
+          <p>Integrations mode: {config.integrationsMode}</p>
+          <p>DB connection: {dbHealthy ? "healthy" : "unavailable"}</p>
           <p>Average latency: {metrics.averageLatencyMs} ms</p>
+          <p>P95 latency: {metrics.p95LatencyMs} ms</p>
+          <p>
+            Success rate: {Math.round(metrics.successRate * 100)}% | Integration jobs queued:{" "}
+            {metrics.integrationJobs.queued}
+          </p>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
@@ -29,6 +41,12 @@ export default function StatusPage() {
             className="rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-1 text-sm font-semibold text-cyan-900"
           >
             Open /api/health
+          </Link>
+          <Link
+            href="/api/metrics"
+            className="rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-1 text-sm font-semibold text-cyan-900"
+          >
+            Open /api/metrics
           </Link>
           <Link
             href="/"

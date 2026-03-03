@@ -1,0 +1,26 @@
+voice-to-action-agent release bundle
+generated_at_utc=2026-03-03T11:31:28Z
+commit=cc04287
+
+[public_urls]
+app=TODO
+health=TODO
+status=TODO
+
+[diagram]
+repo_path=docs/architecture.png
+contest_upload_location=TODO
+
+[screenshots]
+docs/architecture.png
+
+[verification_commands]
+npm run lint
+npm run typecheck
+npm run test
+npm run eval
+npm run build
+
+[placeholder_links]
+published_content=TODO
+gdg_profile=TODO

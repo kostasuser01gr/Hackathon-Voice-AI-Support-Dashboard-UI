@@ -12,7 +12,11 @@
     "typecheck": "tsc --noEmit",
     "eval": "tsx scripts/eval.ts",
     "docker:build": "docker build -t voice-to-action-agent:local .",
-    "deploy:gcp": "./scripts/deploy.sh"
+    "deploy:gcp": "./scripts/deploy.sh",
+    "deploy:precheck": "./scripts/precheck-cloudrun.sh",
+    "release:bundle": "./scripts/release-bundle.sh",
+    "verify:screenshots": "./scripts/verify-screenshots.sh",
+    "judge:verify": "./scripts/judge-verify.sh"
   },
   "dependencies": {
     "@google/genai": "^1.43.0",

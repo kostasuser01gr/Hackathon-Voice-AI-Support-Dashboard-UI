@@ -1,0 +1,7 @@
+{
+  "name": "integration-intent",
+  "inputMode": "text",
+  "text": "Create Jira tickets for the bugfixes and email the summary to support leadership.",
+  "presetId": "technical_incident_summary",
+  "expectsTask": true
+}

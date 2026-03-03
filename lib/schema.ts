@@ -172,6 +172,7 @@ export const ApiErrorSchema = z
     error: z
       .object({
         code: z.string(),
+        detailsCode: z.string().optional(),
         message: z.string(),
         requestId: z.string().optional(),
       })
@@ -195,6 +196,7 @@ export type ProcessModelName = typeof DEFAULT_GEMINI_MODEL;
 export const HealthDiagnosticsSchema = z
   .object({
     geminiKeyPresent: z.boolean(),
+    demoSafeMode: z.boolean(),
     historyMode: z.enum(["db", "local"]),
     rateLimitPerMin: z.number().int().positive(),
     rateLimitBurstPer10s: z.number().int().positive(),
@@ -205,9 +207,18 @@ export const HealthDiagnosticsSchema = z
     shareTokenSecretPresent: z.boolean(),
     observability: z.object({
       processRequests: z.number().int().nonnegative(),
+      processSuccesses: z.number().int().nonnegative(),
       processFailures: z.number().int().nonnegative(),
       safetyFailures: z.number().int().nonnegative(),
       averageLatencyMs: z.number().int().nonnegative(),
+      p95LatencyMs: z.number().int().nonnegative(),
+      successRate: z.number().min(0).max(1),
+      integrationJobs: z.object({
+        queued: z.number().int().nonnegative(),
+        completed: z.number().int().nonnegative(),
+        failed: z.number().int().nonnegative(),
+        retried: z.number().int().nonnegative(),
+      }),
     }),
   })
   .strict();
@@ -221,3 +232,12 @@ export const HealthResponseSchema = z
   .strict();
 
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;
+
+export const MetricsResponseSchema = z
+  .object({
+    timestamp: z.string(),
+    observability: HealthDiagnosticsSchema.shape.observability,
+  })
+  .strict();
+
+export type MetricsResponse = z.infer<typeof MetricsResponseSchema>;

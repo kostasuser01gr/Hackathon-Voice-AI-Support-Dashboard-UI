@@ -1,0 +1,7 @@
+{
+  "name": "support-escalation",
+  "inputMode": "text",
+  "text": "Customer reported intermittent outage again; escalate to on-call and share ETA update within one hour.",
+  "presetId": "complaint_handling",
+  "expectsTask": true
+}

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { POST, processPayload } from "@/app/api/process/route";
+import { GeminiConfigError } from "@/lib/gemini";
 import { resetRateLimiterForTests } from "@/lib/rateLimit";
 
 describe("processPayload", () => {
   beforeEach(() => {
     resetRateLimiterForTests();
+    delete process.env.DEMO_SAFE_MODE;
   });
 
   it("returns success payload with required meta and steps", async () => {
@@ -104,6 +106,34 @@ describe("processPayload", () => {
         expect.objectContaining({ step: "safety_check" }),
       ]),
     });
+  });
+
+  it("uses demo-safe fallback when Gemini config is missing and demo mode is enabled", async () => {
+    process.env.DEMO_SAFE_MODE = "true";
+
+    const response = await processPayload(
+      {
+        inputMode: "text",
+        text: "Please create a support recap and send it to Maria today.",
+      },
+      {
+        requestId: "req-demo-safe",
+        generateStructuredResponse: async () => {
+          throw new GeminiConfigError("Missing key");
+        },
+      },
+    );
+
+    expect(response.meta.model).toBe("demo-safe-local-v1");
+    expect(response.actions.taskList.length).toBeGreaterThanOrEqual(1);
+    expect(response.meta.fallbackUsed).toBe(true);
+    expect(response.auditTrail.map((step) => step.step)).toEqual([
+      "capture",
+      "transcribe",
+      "extract",
+      "draft",
+      "safety_check",
+    ]);
   });
 });
 

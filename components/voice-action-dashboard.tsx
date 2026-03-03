@@ -17,6 +17,7 @@ import {
 import { normalizeLanguage, t } from "@/lib/i18n";
 import { deriveTranscriptInsights } from "@/lib/intelligence";
 import { DEFAULT_PRESET_ID, PRESETS, type PresetId } from "@/lib/presets";
+import { defaultSessionReview } from "@/lib/session-meta";
 import {
   getUserSettingsServerSnapshot,
   getUserSettingsSnapshot,
@@ -90,6 +91,23 @@ function createSessionId() {
   }
 
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function defaultAnalysis() {
+  return {
+    index: {
+      entities: [],
+      topics: [],
+      urgency: "low" as const,
+      openLoops: [],
+    },
+    verifier: {
+      ok: true,
+      score: 100,
+      flags: [],
+      policy: "warn" as const,
+    },
+  };
 }
 
 function emptyStateIllustration() {
@@ -175,15 +193,15 @@ export function VoiceActionDashboard({
     workspaceId: initialSession?.workspaceId ?? userSettings.workspaceId,
     role: "owner",
   });
-  const [review, setReview] = useState(
-    initialSession?.review ?? {
-      emailApproved: false,
-      tasksApproved: false,
-      taskOwners: {},
-      comments: [] as string[],
-    },
+  const [review, setReview] = useState(initialSession?.review ?? defaultSessionReview());
+  const [analysis, setAnalysis] = useState(initialSession?.analysis ?? defaultAnalysis());
+  const [approvalEvents, setApprovalEvents] = useState(
+    initialSession?.approvalEvents ?? [],
   );
   const [activeLocalSessionId, setActiveLocalSessionId] = useState<string | null>(
+    initialSession?.id ?? null,
+  );
+  const [activeServerSessionId, setActiveServerSessionId] = useState<string | null>(
     initialSession?.id ?? null,
   );
   const [newComment, setNewComment] = useState("");
@@ -227,7 +245,7 @@ export function VoiceActionDashboard({
 
     const loadSessionIdentity = async () => {
       try {
-        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        const response = await fetch("/api/me", { cache: "no-store" });
         const payload = (await response.json()) as {
           session?: SessionIdentity;
         };
@@ -249,13 +267,6 @@ export function VoiceActionDashboard({
     return () => {
       cancelled = true;
     };
-  }, [userSettings.workspaceId]);
-
-  useEffect(() => {
-    setSessionIdentity((previous) => ({
-      ...previous,
-      workspaceId: userSettings.workspaceId,
-    }));
   }, [userSettings.workspaceId]);
 
   useEffect(() => {
@@ -283,7 +294,10 @@ export function VoiceActionDashboard({
     setTypedText(source.data.transcript);
     setSelectedPresetId(source.presetId);
     setReview(source.review);
+    setAnalysis(source.analysis);
+    setApprovalEvents(source.approvalEvents);
     setActiveLocalSessionId(source.id);
+    setActiveServerSessionId(source.id);
     setToast({ type: "success", message: "Loaded session for regeneration." });
   }, [initialSession]);
 
@@ -414,7 +428,9 @@ export function VoiceActionDashboard({
           : "bg-slate-100 text-slate-700";
 
   const processingDisabled =
-    loading || !health?.diagnostics.geminiKeyPresent || Boolean(healthError);
+    loading ||
+    (!health?.diagnostics.geminiKeyPresent && !health?.diagnostics.demoSafeMode) ||
+    Boolean(healthError);
   const localizedStatus =
     status === "Listening"
       ? t(language, "listening")
@@ -462,12 +478,10 @@ export function VoiceActionDashboard({
     setErrorMessage("");
     setErrorAuditTrail([]);
     setActiveLocalSessionId(null);
-    setReview({
-      emailApproved: false,
-      tasksApproved: false,
-      taskOwners: {},
-      comments: [],
-    });
+    setActiveServerSessionId(null);
+    setReview(defaultSessionReview());
+    setAnalysis(defaultAnalysis());
+    setApprovalEvents([]);
   };
 
   const copyText = async (label: string, text: string) => {
@@ -506,6 +520,8 @@ export function VoiceActionDashboard({
       pinned: false,
       tags: [],
       review,
+      analysis,
+      approvalEvents,
       data: result,
     };
 
@@ -574,7 +590,7 @@ export function VoiceActionDashboard({
       return;
     }
 
-    if (!health?.diagnostics.geminiKeyPresent) {
+    if (!health?.diagnostics.geminiKeyPresent && !health?.diagnostics.demoSafeMode) {
       const message = "GEMINI_API_KEY is missing. Processing is disabled.";
       setErrorMessage(message);
       showToast("error", message);
@@ -591,8 +607,6 @@ export function VoiceActionDashboard({
         headers: {
           "Content-Type": "application/json",
           "x-store-history": userSettings.storeHistory ? "true" : "false",
-          "x-user-id": userSettings.userId,
-          "x-workspace-id": userSettings.workspaceId,
           "x-redact-pii": userSettings.redactPii ? "true" : "false",
         },
         body: JSON.stringify({
@@ -639,12 +653,41 @@ export function VoiceActionDashboard({
       setShareUrl("");
       setWebhookStatus("");
       setInputMode(mode);
-      setReview({
-        emailApproved: false,
-        tasksApproved: false,
-        taskOwners: {},
-        comments: [],
-      });
+      const nextReview = defaultSessionReview();
+      setReview(nextReview);
+      setApprovalEvents([]);
+      setActiveServerSessionId(processed.meta.requestId);
+
+      const verifierScore = Number(response.headers.get("x-verifier-score") ?? "100");
+      const verifierOk = response.headers.get("x-verifier-ok") !== "false";
+      const verifierFlags = (response.headers.get("x-verifier-flags") ?? "")
+        .split(",")
+        .map((flag) => flag.trim())
+        .filter(Boolean);
+      const topics = (response.headers.get("x-session-topics") ?? "")
+        .split(",")
+        .map((topic) => topic.trim())
+        .filter(Boolean);
+      const urgencyRaw = response.headers.get("x-session-urgency");
+      const insightsFromTranscript = deriveTranscriptInsights(processed.transcript, processed.actions.taskList);
+      const nextAnalysis: StoredSession["analysis"] = {
+        index: {
+          entities: insightsFromTranscript.entities,
+          topics: topics.length ? topics : insightsFromTranscript.topics,
+          urgency:
+            urgencyRaw === "high" || urgencyRaw === "medium" || urgencyRaw === "low"
+              ? urgencyRaw
+              : "low",
+          openLoops: insightsFromTranscript.openLoops,
+        },
+        verifier: {
+          ok: verifierOk,
+          score: Number.isFinite(verifierScore) ? verifierScore : 100,
+          flags: verifierFlags,
+          policy: "warn",
+        },
+      };
+      setAnalysis(nextAnalysis);
 
       patchUserSettings({
         lastLatencyMs: processed.meta.latencyMs,
@@ -656,16 +699,13 @@ export function VoiceActionDashboard({
         saveLocalSession({
           id: sessionId,
           createdAt: new Date().toISOString(),
-          workspaceId: userSettings.workspaceId,
+          workspaceId: sessionIdentity.workspaceId,
           presetId: selectedPresetId,
           pinned: false,
           tags: [],
-          review: {
-            emailApproved: false,
-            tasksApproved: false,
-            taskOwners: {},
-            comments: [],
-          },
+          review: nextReview,
+          analysis: nextAnalysis,
+          approvalEvents: [],
           data: processed,
         });
         setActiveLocalSessionId(sessionId);
@@ -677,6 +717,110 @@ export function VoiceActionDashboard({
       showToast("error", "Network error while processing.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const pushApprovalEvent = (
+    action: "approve_email" | "approve_tasks" | "comment" | "execute",
+    note?: string,
+  ) => {
+    const event = {
+      id: createSessionId(),
+      sessionId: activeServerSessionId ?? activeLocalSessionId ?? "local-session",
+      action,
+      actorId: sessionIdentity.email || "demo-user",
+      actorRole: sessionIdentity.role,
+      timestamp: new Date().toISOString(),
+      note,
+    };
+
+    setApprovalEvents((previous) => [event, ...previous].slice(0, 40));
+  };
+
+  const persistReview = async () => {
+    if (!result) {
+      return;
+    }
+
+    if (health?.diagnostics.historyMode === "db" && activeServerSessionId) {
+      try {
+        if (review.tasksApproved) {
+          const response = await fetch(`/api/sessions/${activeServerSessionId}/approve-tasks`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ note: "Approved from dashboard action board." }),
+          });
+          if (response.ok) {
+            pushApprovalEvent("approve_tasks", "Approved tasks.");
+          }
+        }
+        if (review.emailApproved) {
+          const response = await fetch(`/api/sessions/${activeServerSessionId}/approve-email`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ note: "Approved from dashboard action board." }),
+          });
+          if (response.ok) {
+            pushApprovalEvent("approve_email", "Approved email draft.");
+          }
+        }
+        showToast("success", "Approvals submitted.");
+      } catch {
+        showToast("error", "Failed to submit approval actions.");
+      }
+      return;
+    }
+
+    if (!activeLocalSessionId) {
+      showToast("error", "No local session selected.");
+      return;
+    }
+
+    updateLocalSession(activeLocalSessionId, {
+      review,
+      analysis,
+      approvalEvents,
+    });
+    showToast("success", "Approval notes saved.");
+  };
+
+  const addComment = async () => {
+    const trimmed = newComment.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setReview((previous) => ({
+      ...previous,
+      comments: [trimmed, ...previous.comments].slice(0, 8),
+    }));
+    setNewComment("");
+
+    if (health?.diagnostics.historyMode === "db" && activeServerSessionId) {
+      try {
+        const response = await fetch(`/api/sessions/${activeServerSessionId}/comments`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ note: trimmed }),
+        });
+        if (!response.ok) {
+          throw new Error("comment failed");
+        }
+        pushApprovalEvent("comment", trimmed);
+      } catch {
+        showToast("error", "Could not sync comment to server.");
+      }
+      return;
+    }
+
+    pushApprovalEvent("comment", trimmed);
+    if (activeLocalSessionId) {
+      updateLocalSession(activeLocalSessionId, {
+        review: {
+          ...review,
+          comments: [trimmed, ...review.comments].slice(0, 8),
+        },
+      });
     }
   };
 
@@ -699,6 +843,11 @@ export function VoiceActionDashboard({
               <p className="mt-1 text-xs text-slate-500">
                 {sessionIdentity.name} ({sessionIdentity.role}) · {sessionIdentity.email}
               </p>
+              {health?.diagnostics.demoSafeMode && (
+                <p className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                  Demo-safe mode enabled
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span
@@ -741,6 +890,18 @@ export function VoiceActionDashboard({
                 {t(language, "integrations")}
               </Link>
               <Link
+                href="/actions"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Actions
+              </Link>
+              <Link
+                href="/open-loops"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Open Loops
+              </Link>
+              <Link
                 href="/status"
                 className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
               >
@@ -750,10 +911,18 @@ export function VoiceActionDashboard({
           </div>
         </header>
 
-        {(!health?.diagnostics.geminiKeyPresent || healthError) && (
+        {((!health?.diagnostics.geminiKeyPresent &&
+          !health?.diagnostics.demoSafeMode) ||
+          healthError) && (
           <div className="mb-4 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">
             {healthError ||
               "GEMINI_API_KEY is missing. Processing is disabled until configured."}
+          </div>
+        )}
+
+        {health?.diagnostics.demoSafeMode && !healthError && (
+          <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Demo-safe mode is active. Outputs are generated with deterministic local fallback when Gemini is unavailable.
           </div>
         )}
 
@@ -974,6 +1143,9 @@ export function VoiceActionDashboard({
                   <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-slate-500">
                     Summary
                   </h3>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Model source: {result.meta.model}
+                  </p>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">
                     {result.summary}
                   </p>
@@ -1109,13 +1281,7 @@ export function VoiceActionDashboard({
                     </h3>
                     <button
                       type="button"
-                      onClick={() => {
-                        if (!result || !activeLocalSessionId) {
-                          return;
-                        }
-                        updateLocalSession(activeLocalSessionId, { review });
-                        showToast("success", "Approval notes saved.");
-                      }}
+                      onClick={persistReview}
                       className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700"
                     >
                       Save approvals
@@ -1144,17 +1310,7 @@ export function VoiceActionDashboard({
                     />
                     <button
                       type="button"
-                      onClick={() => {
-                        const trimmed = newComment.trim();
-                        if (!trimmed) {
-                          return;
-                        }
-                        setReview((previous) => ({
-                          ...previous,
-                          comments: [trimmed, ...previous.comments].slice(0, 8),
-                        }));
-                        setNewComment("");
-                      }}
+                      onClick={addComment}
                       className="mt-2 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-800"
                     >
                       Add comment

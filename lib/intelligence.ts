@@ -1,3 +1,5 @@
+import type { SessionIndex, SessionUrgency } from "@/lib/session-meta";
+
 export type TranscriptInsight = {
   entities: string[];
   topics: string[];
@@ -36,5 +38,29 @@ export function deriveTranscriptInsights(
     entities,
     topics,
     openLoops,
+  };
+}
+
+function deriveUrgency(text: string): SessionUrgency {
+  if (/\b(urgent|asap|immediately|today|critical|sev1|p0)\b/i.test(text)) {
+    return "high";
+  }
+
+  if (/\b(this week|soon|follow up|priority|deadline|tomorrow)\b/i.test(text)) {
+    return "medium";
+  }
+
+  return "low";
+}
+
+export function deriveSessionIndex(transcript: string, tasks: string[]): SessionIndex {
+  const insight = deriveTranscriptInsights(transcript, tasks);
+  const urgency = deriveUrgency(`${transcript}\n${tasks.join("\n")}`);
+
+  return {
+    entities: insight.entities,
+    topics: insight.topics,
+    openLoops: insight.openLoops,
+    urgency,
   };
 }

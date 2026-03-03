@@ -1,16 +1,15 @@
 import type { PresetId } from "@/lib/presets";
 import type { ProcessResponse } from "@/lib/schema";
+import {
+  defaultSessionReview,
+  type ApprovalEvent,
+  type SessionAnalysis,
+  type SessionReviewState,
+} from "@/lib/session-meta";
 
-const STORAGE_KEY = "voice_to_action_sessions_v3";
+const STORAGE_KEY = "voice_to_action_sessions_v4";
 const HISTORY_EVENT = "voice-to-action-history-updated";
 const MAX_LOCAL_SESSIONS = 25;
-
-export type SessionReview = {
-  emailApproved: boolean;
-  tasksApproved: boolean;
-  taskOwners: Record<string, string>;
-  comments: string[];
-};
 
 export type StoredSession = {
   id: string;
@@ -19,12 +18,14 @@ export type StoredSession = {
   presetId: PresetId;
   pinned: boolean;
   tags: string[];
-  review: SessionReview;
+  review: SessionReviewState;
+  analysis: SessionAnalysis;
+  approvalEvents: ApprovalEvent[];
   data: ProcessResponse;
 };
 
-type HistoryEnvelopeV3 = {
-  version: 3;
+type HistoryEnvelopeV4 = {
+  version: 4;
   sessions: StoredSession[];
 };
 
@@ -35,7 +36,9 @@ type LegacySession = {
   presetId?: string;
   pinned?: boolean;
   tags?: string[];
-  review?: SessionReview;
+  review?: SessionReviewState;
+  analysis?: SessionAnalysis;
+  approvalEvents?: ApprovalEvent[];
   data?: ProcessResponse;
 };
 
@@ -43,12 +46,20 @@ function isBrowser() {
   return typeof window !== "undefined";
 }
 
-function emptyReview(): SessionReview {
+function emptyAnalysis(): SessionAnalysis {
   return {
-    emailApproved: false,
-    tasksApproved: false,
-    taskOwners: {},
-    comments: [],
+    index: {
+      entities: [],
+      topics: [],
+      urgency: "low",
+      openLoops: [],
+    },
+    verifier: {
+      ok: true,
+      score: 100,
+      flags: [],
+      policy: "warn",
+    },
   };
 }
 
@@ -56,6 +67,19 @@ function normalizeSession(entry: LegacySession): StoredSession | null {
   if (!entry?.id || !entry?.createdAt || !entry?.data) {
     return null;
   }
+
+  const reviewBase = defaultSessionReview();
+  const review = {
+    ...reviewBase,
+    ...(entry.review ?? {}),
+    taskOwners:
+      entry.review?.taskOwners && typeof entry.review.taskOwners === "object"
+        ? entry.review.taskOwners
+        : reviewBase.taskOwners,
+    comments: Array.isArray(entry.review?.comments) ? entry.review.comments : reviewBase.comments,
+  };
+
+  const analysis = entry.analysis ?? emptyAnalysis();
 
   return {
     id: entry.id,
@@ -66,17 +90,45 @@ function normalizeSession(entry: LegacySession): StoredSession | null {
     tags: Array.isArray(entry.tags)
       ? entry.tags.filter((tag) => typeof tag === "string").slice(0, 8)
       : [],
-    review: entry.review ?? emptyReview(),
+    review,
+    analysis: {
+      index: {
+        entities: Array.isArray(analysis.index?.entities) ? analysis.index.entities : [],
+        topics: Array.isArray(analysis.index?.topics) ? analysis.index.topics : [],
+        urgency:
+          analysis.index?.urgency === "high" ||
+          analysis.index?.urgency === "medium" ||
+          analysis.index?.urgency === "low"
+            ? analysis.index.urgency
+            : "low",
+        openLoops: Array.isArray(analysis.index?.openLoops) ? analysis.index.openLoops : [],
+      },
+      verifier: {
+        ok: Boolean(analysis.verifier?.ok ?? true),
+        score:
+          typeof analysis.verifier?.score === "number"
+            ? Math.max(0, Math.min(100, Math.round(analysis.verifier.score)))
+            : 100,
+        flags: Array.isArray(analysis.verifier?.flags) ? analysis.verifier.flags : [],
+        policy:
+          analysis.verifier?.policy === "reject" ||
+          analysis.verifier?.policy === "repair" ||
+          analysis.verifier?.policy === "warn"
+            ? analysis.verifier.policy
+            : "warn",
+      },
+    },
+    approvalEvents: Array.isArray(entry.approvalEvents) ? entry.approvalEvents : [],
     data: entry.data as ProcessResponse,
   };
 }
 
-function toEnvelope(input: unknown): HistoryEnvelopeV3 {
+function toEnvelope(input: unknown): HistoryEnvelopeV4 {
   if (
     typeof input === "object" &&
     input !== null &&
     "version" in input &&
-    (input as { version?: unknown }).version === 3 &&
+    (input as { version?: unknown }).version === 4 &&
     Array.isArray((input as { sessions?: unknown }).sessions)
   ) {
     const withSessions = input as unknown as { sessions: LegacySession[] };
@@ -85,7 +137,7 @@ function toEnvelope(input: unknown): HistoryEnvelopeV3 {
       .filter((entry) => Boolean(entry)) as StoredSession[];
 
     return {
-      version: 3,
+      version: 4,
       sessions,
     };
   }
@@ -94,7 +146,8 @@ function toEnvelope(input: unknown): HistoryEnvelopeV3 {
     typeof input === "object" &&
     input !== null &&
     "version" in input &&
-    (input as { version?: unknown }).version === 2 &&
+    ((input as { version?: unknown }).version === 2 ||
+      (input as { version?: unknown }).version === 3) &&
     Array.isArray((input as { sessions?: unknown }).sessions)
   ) {
     const withSessions = input as unknown as { sessions: LegacySession[] };
@@ -103,7 +156,7 @@ function toEnvelope(input: unknown): HistoryEnvelopeV3 {
       .filter((entry) => Boolean(entry)) as StoredSession[];
 
     return {
-      version: 3,
+      version: 4,
       sessions,
     };
   }
@@ -112,26 +165,26 @@ function toEnvelope(input: unknown): HistoryEnvelopeV3 {
     const migrated = (input as LegacySession[]).map((entry) => normalizeSession(entry));
 
     return {
-      version: 3,
+      version: 4,
       sessions: migrated.filter((entry) => Boolean(entry)) as StoredSession[],
     };
   }
 
   return {
-    version: 3,
+    version: 4,
     sessions: [],
   };
 }
 
-function readEnvelope(): HistoryEnvelopeV3 {
+function readEnvelope(): HistoryEnvelopeV4 {
   if (!isBrowser()) {
-    return { version: 3, sessions: [] };
+    return { version: 4, sessions: [] };
   }
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return { version: 3, sessions: [] };
+      return { version: 4, sessions: [] };
     }
 
     const parsed = JSON.parse(raw) as unknown;
@@ -140,11 +193,11 @@ function readEnvelope(): HistoryEnvelopeV3 {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(envelope));
     return envelope;
   } catch {
-    return { version: 3, sessions: [] };
+    return { version: 4, sessions: [] };
   }
 }
 
-function writeEnvelope(envelope: HistoryEnvelopeV3) {
+function writeEnvelope(envelope: HistoryEnvelopeV4) {
   if (!isBrowser()) {
     return;
   }
@@ -166,7 +219,7 @@ export function saveLocalSession(session: StoredSession) {
   const next = [session, ...existing].slice(0, MAX_LOCAL_SESSIONS);
 
   writeEnvelope({
-    version: 3,
+    version: 4,
     sessions: next,
   });
 }
@@ -174,14 +227,14 @@ export function saveLocalSession(session: StoredSession) {
 export function removeLocalSession(sessionId: string) {
   const next = listLocalSessions().filter((session) => session.id !== sessionId);
   writeEnvelope({
-    version: 3,
+    version: 4,
     sessions: next,
   });
 }
 
 export function clearAllLocalSessions() {
   writeEnvelope({
-    version: 3,
+    version: 4,
     sessions: [],
   });
 }
@@ -189,7 +242,16 @@ export function clearAllLocalSessions() {
 export function updateLocalSession(
   sessionId: string,
   patch: Partial<
-    Pick<StoredSession, "pinned" | "tags" | "review" | "workspaceId" | "presetId">
+    Pick<
+      StoredSession,
+      | "pinned"
+      | "tags"
+      | "review"
+      | "workspaceId"
+      | "presetId"
+      | "analysis"
+      | "approvalEvents"
+    >
   >,
 ) {
   const next = listLocalSessions().map((session) => {
@@ -201,11 +263,13 @@ export function updateLocalSession(
       ...session,
       ...patch,
       review: patch.review ? { ...session.review, ...patch.review } : session.review,
+      analysis: patch.analysis ? { ...session.analysis, ...patch.analysis } : session.analysis,
+      approvalEvents: patch.approvalEvents ?? session.approvalEvents,
     };
   });
 
   writeEnvelope({
-    version: 3,
+    version: 4,
     sessions: next,
   });
 }
@@ -218,7 +282,7 @@ export function pruneLocalSessions(retentionDays: number) {
   });
 
   writeEnvelope({
-    version: 3,
+    version: 4,
     sessions: next,
   });
 }

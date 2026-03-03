@@ -7,12 +7,14 @@ export const runtime = "nodejs";
 
 export async function GET() {
   const config = getAppConfig();
+  const observability = getObservabilitySnapshot();
 
   return NextResponse.json({
     status: "ok",
     timestamp: new Date().toISOString(),
     diagnostics: {
       geminiKeyPresent: config.geminiKeyPresent,
+      demoSafeMode: config.demoSafeMode,
       historyMode: config.historyMode,
       rateLimitPerMin: config.rateLimitPerMin,
       rateLimitBurstPer10s: config.rateLimitBurstPer10s,
@@ -21,7 +23,7 @@ export async function GET() {
       model: config.geminiModel,
       promptVersion: config.promptVersion,
       shareTokenSecretPresent: config.shareTokenSecretPresent,
-      observability: getObservabilitySnapshot(),
+      observability,
     },
   });
 }

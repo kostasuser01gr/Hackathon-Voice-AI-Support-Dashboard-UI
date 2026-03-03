@@ -29,10 +29,12 @@ const cards: Array<{
 
 export default function IntegrationsPage() {
   const [status, setStatus] = useState<Record<string, string>>({});
+  const [latestJob, setLatestJob] = useState<Record<string, string>>({});
+  const [sessionId, setSessionId] = useState("");
 
   const runIntegration = async (
     service: IntegrationService,
-    mode: "dry_run" | "connect_stub",
+    action: "dry_run" | "connect_stub" | "execute",
   ) => {
     setStatus((previous) => ({
       ...previous,
@@ -40,17 +42,21 @@ export default function IntegrationsPage() {
     }));
 
     try {
-      const response = await fetch("/api/integrations/dry-run", {
+      const response = await fetch("/api/integrations/execute", {
         method: "POST",
         headers: {
           "content-type": "application/json",
         },
         body: JSON.stringify({
           service,
-          mode,
+          action,
+          sessionId: sessionId.trim() || undefined,
           payload: {
             source: "integrations_page",
+            requestedAction: action,
           },
+          idempotencyKey:
+            action === "execute" ? `${service}:${action}:${sessionId || "none"}` : undefined,
         }),
       });
 
@@ -66,6 +72,10 @@ export default function IntegrationsPage() {
       setStatus((previous) => ({
         ...previous,
         [service]: `Queued job ${jobId}`,
+      }));
+      setLatestJob((previous) => ({
+        ...previous,
+        [service]: jobId,
       }));
 
       window.setTimeout(async () => {
@@ -99,6 +109,45 @@ export default function IntegrationsPage() {
     }
   };
 
+  const retryLatestJob = async (service: IntegrationService) => {
+    const jobId = latestJob[service];
+    if (!jobId) {
+      setStatus((previous) => ({
+        ...previous,
+        [service]: "No previous job to retry.",
+      }));
+      return;
+    }
+
+    setStatus((previous) => ({
+      ...previous,
+      [service]: "Retrying...",
+    }));
+
+    try {
+      const response = await fetch(`/api/integrations/jobs/${jobId}/retry`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as { job?: { id: string } };
+      if (!response.ok || !payload.job) {
+        throw new Error("Retry failed.");
+      }
+      setLatestJob((previous) => ({
+        ...previous,
+        [service]: payload.job!.id,
+      }));
+      setStatus((previous) => ({
+        ...previous,
+        [service]: `Retry queued as ${payload.job!.id}`,
+      }));
+    } catch {
+      setStatus((previous) => ({
+        ...previous,
+        [service]: "Retry failed.",
+      }));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#d9f5ff_0%,#f5f9ff_35%,#f7f6ff_60%,#ffffff_100%)] px-4 py-6 text-slate-900 md:px-8">
       <div className="mx-auto max-w-5xl space-y-5">
@@ -123,8 +172,33 @@ export default function IntegrationsPage() {
               >
                 Settings
               </Link>
+              <Link
+                href="/actions"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Actions
+              </Link>
+              <Link
+                href="/open-loops"
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+              >
+                Open Loops
+              </Link>
             </div>
           </div>
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            Integrations are mock mode for hackathon demo by default. Execution is blocked
+            until approvals when `action=execute` + a DB `sessionId` are provided.
+          </div>
+          <label className="mt-3 block text-sm text-slate-700">
+            Session ID for approval-gated execute (optional)
+            <input
+              value={sessionId}
+              onChange={(event) => setSessionId(event.target.value)}
+              placeholder="uuid from session meta.requestId"
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+          </label>
         </header>
 
         <div className="grid gap-4 md:grid-cols-3">
@@ -149,6 +223,20 @@ export default function IntegrationsPage() {
                   className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
                 >
                   Dry-run only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runIntegration(card.id, "execute")}
+                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900"
+                >
+                  Execute (gated)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => retryLatestJob(card.id)}
+                  className="rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-900"
+                >
+                  Retry last
                 </button>
               </div>
               <p className="mt-3 text-xs text-slate-500">

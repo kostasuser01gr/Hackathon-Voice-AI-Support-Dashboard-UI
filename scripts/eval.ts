@@ -45,6 +45,12 @@ function hasAllAuditSteps(response: ProcessResponse) {
   return steps.every((step) => actual.includes(step));
 }
 
+function hasVerifierAudit(response: ProcessResponse) {
+  return response.auditTrail.some(
+    (entry) => entry.step === "safety_check" && /verifier score:/i.test(entry.details),
+  );
+}
+
 function makeStubResponse(params: {
   inputMode: "voice" | "text";
   transcript: string;
@@ -58,7 +64,7 @@ function makeStubResponse(params: {
       .find(Boolean) ?? "Transcript summary.";
 
   const hasRequest =
-    /\b(please|need to|can you|could you|schedule|send|prepare|share|assign|update)\b/i.test(
+    /\b(please|need to|can you|could you|schedule|send|prepare|share|assign|update|create|must)\b/i.test(
       params.transcript,
     );
 
@@ -153,8 +159,16 @@ async function run() {
       const checks = {
         schema: true,
         audit: hasAllAuditSteps(response),
+        verifier: hasVerifierAudit(response),
         summarySentences: sentenceCount(response.summary) >= 1 && sentenceCount(response.summary) <= 3,
         tasksPresent: !fixture.expectsTask || response.actions.taskList.length >= 1,
+        actionLikeTasks:
+          !fixture.expectsTask ||
+          response.actions.taskList.some((task) =>
+            /\b(follow|send|schedule|prepare|update|assign|review|book|confirm)\b/i.test(
+              task,
+            ),
+          ),
         emailSubject:
           response.actions.emailDraft.trim().length > 0 &&
           /^subject:/i.test(response.actions.emailDraft),

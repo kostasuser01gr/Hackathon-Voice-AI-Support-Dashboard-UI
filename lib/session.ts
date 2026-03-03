@@ -1,5 +1,10 @@
 import type { PresetId } from "@/lib/presets";
 import type { ProcessResponse } from "@/lib/schema";
+import type {
+  ApprovalEvent,
+  SessionAnalysis,
+  SessionReviewState,
+} from "@/lib/session-meta";
 
 export type SessionSummary = {
   id: string;
@@ -11,6 +16,8 @@ export type SessionSummary = {
   presetId: PresetId;
   pinned?: boolean;
   tags?: string[];
+  review?: SessionReviewState;
+  analysis?: SessionAnalysis;
 };
 
 export type StoredSessionPayload = {
@@ -20,6 +27,9 @@ export type StoredSessionPayload = {
   workspaceId?: string;
   pinned?: boolean;
   tags?: string[];
+  review?: SessionReviewState;
+  analysis?: SessionAnalysis;
+  approvalEvents?: ApprovalEvent[];
   data: ProcessResponse;
 };
 

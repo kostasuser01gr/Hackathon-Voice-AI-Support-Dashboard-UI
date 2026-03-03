@@ -58,14 +58,19 @@ Open `http://localhost:3000`.
 - Integrations page with safe dry-run background jobs
 - Session intelligence card (topics/entities/open loops)
 - Approval center (task/email approval + reviewer comments)
+- Wave 1 APIs: approvals, compare/regenerate, open loops, metrics, integrations execute/retry
+- Demo-safe deterministic fallback mode (`DEMO_SAFE_MODE=true`) for judge reliability
 
 ## Pages
 
 - `/` dashboard
 - `/history`
 - `/history/[id]`
+- `/history/compare`
 - `/settings`
 - `/integrations`
+- `/actions`
+- `/open-loops`
 - `/share/[token]`
 - `/status`
 
@@ -73,13 +78,23 @@ Open `http://localhost:3000`.
 
 - `POST /api/process`
 - `GET /api/health`
+- `GET /api/me`
+- `GET /api/metrics`
 - `GET /api/history` (db mode)
 - `GET /api/history/[id]` (db mode)
+- `GET /api/history/compare` (wave1 + db mode)
+- `POST /api/history/[id]/regenerate` (wave1 + db mode)
+- `GET /api/open-loops` (wave1 + db mode)
+- `POST /api/sessions/[id]/approve-email` (wave1 + db mode)
+- `POST /api/sessions/[id]/approve-tasks` (wave1 + db mode)
+- `POST /api/sessions/[id]/comments` (wave1 + db mode)
 - `GET|POST|DELETE /api/auth/session`
 - `POST /api/share`
 - `POST /api/export/webhook`
 - `POST /api/integrations/dry-run`
+- `POST /api/integrations/execute`
 - `GET /api/integrations/jobs/[id]`
+- `POST /api/integrations/jobs/[id]/retry`
 
 ## Structured output contract
 
@@ -126,6 +141,10 @@ Optional:
 - `RATE_LIMIT_BURST_PER_10S` (default `6`)
 - `MAX_INPUT_CHARS` (default `2000`)
 - `PROMPT_VERSION` (default `v1`)
+- `DEMO_SAFE_MODE=true|false` (default `false`)
+- `FEATURE_WAVE1` (default `true`)
+- `VERIFIER_POLICY=warn|repair|reject` (default `warn`)
+- `INTEGRATIONS_MODE=mock|live` (default `mock`)
 - `SHARE_TOKEN_SECRET`
 - `DATABASE_URL` (required only when `HISTORY_MODE=db`)
 
@@ -152,6 +171,10 @@ DB:
 ## Deployment automation proof (bonus)
 
 - `scripts/deploy.sh` one-command Cloud Run deploy
+- `scripts/precheck-cloudrun.sh` billing/API/env preflight
+- `scripts/release-bundle.sh` judge artifact bundle generator
+- `scripts/judge-verify.sh` one-command zero-to-pass verification
+- `scripts/verify-screenshots.sh` required screenshot placeholders check
 - `cloudbuild.yaml` Cloud Build pipeline deploy
 - `.github/workflows/deploy-gcp.yml` GitHub Actions deploy to GCP
 - `infra/main.tf` Terraform Cloud Run service
@@ -170,6 +193,13 @@ See `docs/demo-script.md` (90-second judge flow).
 ## QA checklist
 
 See `docs/qa-checklist.md`.
+
+## Additional docs
+
+- `docs/judge-runbook.md`
+- `docs/troubleshooting.md`
+- `docs/scoring-matrix.md`
+- `docs/screenshot-checklist.md`
 
 ## Judging highlights
 

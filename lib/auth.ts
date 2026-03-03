@@ -1,16 +1,18 @@
 import { cookies } from "next/headers";
 
-type SessionData = {
+export type SessionRole = "owner" | "admin" | "agent" | "viewer";
+
+export type SessionData = {
   userId: string;
   name: string;
   email: string;
   workspaceId: string;
-  role: "owner" | "admin" | "agent" | "viewer";
+  role: SessionRole;
 };
 
 const SESSION_COOKIE = "vaa_demo_session";
 
-const DEFAULT_SESSION: SessionData = {
+export const DEFAULT_SESSION: SessionData = {
   userId: "demo-user",
   name: "Demo User",
   email: "demo@voice-action.local",
@@ -33,6 +35,18 @@ function decodeSession(raw: string): SessionData | null {
 
 function encodeSession(session: SessionData) {
   return Buffer.from(JSON.stringify(session), "utf8").toString("base64url");
+}
+
+export function parseSessionCookieValue(raw?: string | null) {
+  if (!raw) {
+    return null;
+  }
+
+  return decodeSession(raw);
+}
+
+export function getSessionCookieName() {
+  return SESSION_COOKIE;
 }
 
 export async function getServerSession() {

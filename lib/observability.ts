@@ -1,15 +1,29 @@
 type MetricState = {
   processRequests: number;
+  processSuccesses: number;
   processFailures: number;
   safetyFailures: number;
-  totalLatencyMs: number;
+  latencies: number[];
+  integrationJobs: {
+    queued: number;
+    completed: number;
+    failed: number;
+    retried: number;
+  };
 };
 
 const state: MetricState = {
   processRequests: 0,
+  processSuccesses: 0,
   processFailures: 0,
   safetyFailures: 0,
-  totalLatencyMs: 0,
+  latencies: [],
+  integrationJobs: {
+    queued: 0,
+    completed: 0,
+    failed: 0,
+    retried: 0,
+  },
 };
 
 export function trackProcessRequest() {
@@ -20,25 +34,60 @@ export function trackProcessFailure() {
   state.processFailures += 1;
 }
 
+export function trackProcessSuccess() {
+  state.processSuccesses += 1;
+}
+
 export function trackSafetyFailure() {
   state.safetyFailures += 1;
 }
 
 export function trackLatency(latencyMs: number) {
-  state.totalLatencyMs += Math.max(0, Math.round(latencyMs));
+  state.latencies.push(Math.max(0, Math.round(latencyMs)));
+  if (state.latencies.length > 512) {
+    state.latencies.shift();
+  }
+}
+
+export function trackIntegrationJob(
+  status: "queued" | "completed" | "failed" | "retried",
+) {
+  state.integrationJobs[status] += 1;
+}
+
+function percentile(values: number[], p: number) {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil((p / 100) * sorted.length) - 1),
+  );
+  return sorted[index];
 }
 
 export function getObservabilitySnapshot() {
+  const totalLatencyMs = state.latencies.reduce((total, item) => total + item, 0);
   const averageLatencyMs =
     state.processRequests > 0
-      ? Math.round(state.totalLatencyMs / state.processRequests)
+      ? Math.round(totalLatencyMs / state.processRequests)
+      : 0;
+  const successRate =
+    state.processRequests > 0
+      ? state.processSuccesses / state.processRequests
       : 0;
 
   return {
     processRequests: state.processRequests,
+    processSuccesses: state.processSuccesses,
     processFailures: state.processFailures,
     safetyFailures: state.safetyFailures,
     averageLatencyMs,
+    p95LatencyMs: percentile(state.latencies, 95),
+    successRate,
+    integrationJobs: state.integrationJobs,
   };
 }
 
@@ -73,7 +122,14 @@ export function logServerEvent(
 
 export function resetObservabilityForTests() {
   state.processRequests = 0;
+  state.processSuccesses = 0;
   state.processFailures = 0;
   state.safetyFailures = 0;
-  state.totalLatencyMs = 0;
+  state.latencies = [];
+  state.integrationJobs = {
+    queued: 0,
+    completed: 0,
+    failed: 0,
+    retried: 0,
+  };
 }

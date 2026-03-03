@@ -14,9 +14,25 @@ describe("share tokens", () => {
       review: {
         emailApproved: false,
         tasksApproved: false,
+        executed: false,
         taskOwners: {},
         comments: [],
       },
+      analysis: {
+        index: {
+          entities: [],
+          topics: [],
+          urgency: "low",
+          openLoops: [],
+        },
+        verifier: {
+          ok: true,
+          score: 100,
+          flags: [],
+          policy: "warn",
+        },
+      },
+      approvalEvents: [],
       data: {
         inputMode: "text",
         transcript: "Please send update.",

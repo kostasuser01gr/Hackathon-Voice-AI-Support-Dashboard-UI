@@ -1,0 +1,7 @@
+{
+  "name": "internal-handoff",
+  "inputMode": "text",
+  "text": "Ops to update the runbook, engineering to verify rollback checklist, and PM to post release note by end of day.",
+  "presetId": "internal_ops_tasking",
+  "expectsTask": true
+}

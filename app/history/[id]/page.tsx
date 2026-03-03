@@ -13,6 +13,7 @@ import {
 } from "@/lib/history";
 import { DEFAULT_PRESET_ID, type PresetId } from "@/lib/presets";
 import { HealthResponseSchema, type HealthResponse, type ProcessResponse } from "@/lib/schema";
+import { defaultSessionReview } from "@/lib/session-meta";
 
 export default function HistoryDetailPage() {
   const params = useParams<{ id: string }>();
@@ -73,6 +74,9 @@ export default function HistoryDetailPage() {
             workspaceId?: string;
             userId?: string;
             presetId?: string;
+            review?: StoredSession["review"];
+            analysis?: StoredSession["analysis"];
+            approvalEvents?: StoredSession["approvalEvents"];
             data: ProcessResponse;
           };
           error?: { message?: string };
@@ -90,12 +94,12 @@ export default function HistoryDetailPage() {
             presetId: (payload.session.presetId ?? DEFAULT_PRESET_ID) as PresetId,
             pinned: false,
             tags: [],
-            review: {
-              emailApproved: false,
-              tasksApproved: false,
-              taskOwners: {},
-              comments: [],
+            review: payload.session.review ?? defaultSessionReview(),
+            analysis: payload.session.analysis ?? {
+              index: { entities: [], topics: [], urgency: "low", openLoops: [] },
+              verifier: { ok: true, score: 100, flags: [], policy: "warn" },
             },
+            approvalEvents: payload.session.approvalEvents ?? [],
             data: payload.session.data,
           });
         }

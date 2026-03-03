@@ -1,0 +1,7 @@
+{
+  "name": "approval-required",
+  "inputMode": "text",
+  "text": "Please send the draft to the legal team and schedule a review call by tomorrow.",
+  "presetId": "internal_ops_tasking",
+  "expectsTask": true
+}
