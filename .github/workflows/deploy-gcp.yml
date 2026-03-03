@@ -11,6 +11,7 @@ env:
 
 jobs:
   deploy:
+    if: ${{ secrets.GCP_SA_KEY != '' && secrets.GEMINI_API_KEY != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,3 +37,12 @@ jobs:
       - name: Show URL
         run: |
           gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format='value(status.url)'
+
+  skip-missing-secrets:
+    if: ${{ !(secrets.GCP_SA_KEY != '' && secrets.GEMINI_API_KEY != '') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip deploy when required secrets are not configured
+        run: |
+          echo "Skipping Cloud Run deploy."
+          echo "Missing one or both secrets: GCP_SA_KEY, GEMINI_API_KEY."
