@@ -10,8 +10,25 @@ env:
   REGION: europe-west1
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      can_deploy: ${{ steps.check.outputs.can_deploy }}
+    steps:
+      - id: check
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [[ -n "${GCP_SA_KEY}" && -n "${GEMINI_API_KEY}" ]]; then
+            echo "can_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy:
-    if: ${{ secrets.GCP_SA_KEY != '' && secrets.GEMINI_API_KEY != '' }}
+    needs: preflight
+    if: ${{ needs.preflight.outputs.can_deploy == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,7 +56,8 @@ jobs:
           gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format='value(status.url)'
 
   skip-missing-secrets:
-    if: ${{ !(secrets.GCP_SA_KEY != '' && secrets.GEMINI_API_KEY != '') }}
+    needs: preflight
+    if: ${{ needs.preflight.outputs.can_deploy != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Skip deploy when required secrets are not configured
