@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "mode": "hosting-proof",
+  "service": "voice-to-action-agent",
+  "window": "1m",
+  "counters": {
+    "requests": 0,
+    "errors": 0,
+    "safetyFailures": 0
+  },
+  "latency": {
+    "p50Ms": 0,
+    "p95Ms": 0
+  },
+  "timestamp": "2026-03-03T18:05:00Z"
+}

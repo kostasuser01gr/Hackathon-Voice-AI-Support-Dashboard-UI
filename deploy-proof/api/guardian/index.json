@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "mode": "hosting-proof",
+  "service": "voice-to-action-agent",
+  "status": "guarding",
+  "timestamp": "2026-03-03T18:05:00Z",
+  "notes": "Static guardian proof endpoint for public Firebase verification."
+}

@@ -5,6 +5,40 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "/api/**",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json; charset=utf-8"
+          },
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          }
+        ]
+      },
+      {
+        "source": "/health.json",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          }
+        ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/api/guardian",
+        "destination": "/api/guardian/index.json"
+      },
+      {
+        "source": "/api/metrics",
+        "destination": "/api/metrics/index.json"
+      }
     ]
   }
 }
