@@ -37,6 +37,25 @@
   1. Approve tasks and email for the target session
   2. Retry `/api/integrations/execute` with same session id
 
+## Live integrations require dry-run acknowledgement
+- Symptom: `DRY_RUN_REQUIRED`
+- Fix:
+  1. Keep `INTEGRATIONS_MODE=mock` for demo runs, or
+  2. In live mode send `payload.dryRunAcknowledged=true` after reviewing dry-run output
+
+## Session signing mismatch
+- Symptom: authenticated APIs act as viewer/default unexpectedly in production.
+- Fix:
+  1. Set `SESSION_SIGNING_SECRET` consistently across all deployments
+  2. Clear browser cookies for the app domain and re-sync session
+  3. Re-run `/api/me` and verify `authSource` response
+
+## Local port conflict
+- Symptom: `npm run dev` fails because port 3000 is in use.
+- Fix:
+  1. `lsof -nP -iTCP:3000 -sTCP:LISTEN`
+  2. Stop the conflicting process or run `PORT=3001 npm run dev`
+
 ## Deployment precheck fails
 - Run:
   - `PROJECT_ID=<your-project> ./scripts/precheck-cloudrun.sh`
@@ -44,4 +63,3 @@
   - billing is enabled
   - required APIs are enabled
   - required env vars are set
-

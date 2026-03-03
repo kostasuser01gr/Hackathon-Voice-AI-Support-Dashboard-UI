@@ -273,6 +273,10 @@ export default function SettingsPage() {
                 Share token secret present:{" "}
                 {health?.diagnostics.shareTokenSecretPresent ? "yes" : "no"}
               </p>
+              <p>
+                Session signing secret present:{" "}
+                {health?.diagnostics.sessionSigningSecretPresent ? "yes" : "no"}
+              </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm md:col-span-2">
               <p className="font-semibold">Observability</p>
@@ -288,6 +292,7 @@ export default function SettingsPage() {
               </p>
               <p>
                 Avg latency: {health?.diagnostics.observability.averageLatencyMs ?? 0} ms |
+                P50 latency: {health?.diagnostics.observability.p50LatencyMs ?? 0} ms |
                 P95 latency: {health?.diagnostics.observability.p95LatencyMs ?? 0} ms
               </p>
               <p>

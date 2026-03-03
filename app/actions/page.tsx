@@ -28,6 +28,8 @@ type ActionBoardRow = {
     tasksApproved: boolean;
     executed: boolean;
   };
+  latestReviewerNote: string;
+  latestEventTimestamp: string;
 };
 
 function toReviewStatus(review: ActionBoardRow["review"]): ReviewStatus {
@@ -112,6 +114,10 @@ export default function ActionsPage() {
               tasksApproved: boolean;
               executed?: boolean;
             };
+            approvalEvents?: Array<{
+              timestamp: string;
+              note?: string;
+            }>;
           }>;
           error?: { message?: string };
         };
@@ -122,20 +128,30 @@ export default function ActionsPage() {
 
         if (!cancelled) {
           setRows(
-            payload.sessions.map((session) => ({
-              id: session.id,
-              createdAt: session.createdAt,
-              workspaceId: session.workspaceId,
-              inputMode: session.inputMode,
-              summarySnippet: session.summarySnippet,
-              actionCount: session.actionCount,
-              presetId: session.presetId as ActionBoardRow["presetId"],
-              review: {
-                emailApproved: Boolean(session.review?.emailApproved),
-                tasksApproved: Boolean(session.review?.tasksApproved),
-                executed: Boolean(session.review?.executed),
-              },
-            })),
+            payload.sessions.map((session) => {
+              const latestEvent = Array.isArray(session.approvalEvents)
+                ? [...session.approvalEvents]
+                    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+                    .at(0)
+                : undefined;
+
+              return {
+                id: session.id,
+                createdAt: session.createdAt,
+                workspaceId: session.workspaceId,
+                inputMode: session.inputMode,
+                summarySnippet: session.summarySnippet,
+                actionCount: session.actionCount,
+                presetId: session.presetId as ActionBoardRow["presetId"],
+                review: {
+                  emailApproved: Boolean(session.review?.emailApproved),
+                  tasksApproved: Boolean(session.review?.tasksApproved),
+                  executed: Boolean(session.review?.executed),
+                },
+                latestReviewerNote: latestEvent?.note?.trim() || "",
+                latestEventTimestamp: latestEvent?.timestamp ?? session.createdAt,
+              };
+            }),
           );
         }
       } catch (loadError) {
@@ -163,6 +179,8 @@ export default function ActionsPage() {
             tasksApproved: review.tasksApproved,
             executed: review.executed,
           },
+          latestReviewerNote: review.comments[0] ?? "",
+          latestEventTimestamp: session.approvalEvents[0]?.timestamp ?? session.createdAt,
         } satisfies ActionBoardRow;
       }),
     [localSessions],
@@ -250,6 +268,8 @@ export default function ActionsPage() {
                 <th className="px-4 py-3 font-semibold">Summary</th>
                 <th className="px-4 py-3 font-semibold">Tasks</th>
                 <th className="px-4 py-3 font-semibold">Approval</th>
+                <th className="px-4 py-3 font-semibold">Latest Note</th>
+                <th className="px-4 py-3 font-semibold">Last Event</th>
                 <th className="px-4 py-3 font-semibold">Open</th>
               </tr>
             </thead>
@@ -276,6 +296,12 @@ export default function ActionsPage() {
                           {status}
                         </span>
                       </td>
+                      <td className="max-w-xs truncate px-4 py-3 text-xs text-slate-600">
+                        {row.latestReviewerNote || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-600">
+                        {formatTs(row.latestEventTimestamp)}
+                      </td>
                       <td className="px-4 py-3">
                         <Link
                           href={`/history/${row.id}`}
@@ -289,7 +315,7 @@ export default function ActionsPage() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                     No action rows found for this filter.
                   </td>
                 </tr>

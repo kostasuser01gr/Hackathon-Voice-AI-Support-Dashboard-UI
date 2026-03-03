@@ -7,6 +7,7 @@ export type SessionIndex = {
   topics: string[];
   urgency: SessionUrgency;
   openLoops: string[];
+  openLoopsCount: number;
 };
 
 export type VerifierReport = {
@@ -31,6 +32,7 @@ export type ApprovalEvent = {
   actorRole: "owner" | "admin" | "agent" | "viewer";
   timestamp: string;
   note?: string;
+  payloadHash: string;
 };
 
 export type SessionReviewState = {
@@ -68,6 +70,32 @@ export function defaultSessionReview(): SessionReviewState {
   };
 }
 
+export function makeApprovalPayloadHash(input: {
+  sessionId: string;
+  actorId: string;
+  actorRole: ApprovalEvent["actorRole"];
+  action: ApprovalAction;
+  note?: string;
+  timestamp: string;
+}) {
+  const serialized = [
+    input.sessionId,
+    input.actorId,
+    input.actorRole,
+    input.action,
+    input.note ?? "",
+    input.timestamp,
+  ].join("|");
+
+  let hash = 2166136261;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
 export function makeApprovalEvent(params: {
   sessionId: string;
   actorId: string;
@@ -75,13 +103,22 @@ export function makeApprovalEvent(params: {
   action: ApprovalAction;
   note?: string;
 }) {
+  const timestamp = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
     sessionId: params.sessionId,
     action: params.action,
     actorId: params.actorId,
     actorRole: params.actorRole,
-    timestamp: new Date().toISOString(),
+    timestamp,
     note: params.note,
+    payloadHash: makeApprovalPayloadHash({
+      sessionId: params.sessionId,
+      actorId: params.actorId,
+      actorRole: params.actorRole,
+      action: params.action,
+      note: params.note,
+      timestamp,
+    }),
   } satisfies ApprovalEvent;
 }

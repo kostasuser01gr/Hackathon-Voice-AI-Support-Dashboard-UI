@@ -35,3 +35,15 @@
 - [ ] `npm run test`
 - [ ] `npm run eval`
 - [ ] `npm run build`
+
+## No-Regression Guardrail
+
+- [ ] `npm run test -- tests/process-contract.test.ts`
+- [ ] Confirm top-level `/api/process` keys are exactly:
+  - `inputMode`, `transcript`, `summary`, `actions`, `auditTrail`, `meta`
+- [ ] Confirm nested keys remain unchanged:
+  - `actions`: `taskList`, `emailDraft`
+  - `auditTrail[]`: `step`, `timestamp`, `details`
+  - `meta`: `requestId`, `model`, `latencyMs`, `validation`, `fallbackUsed`
+- [ ] Expected result:
+  - contract test passes with no key removal/rename failures

@@ -3,6 +3,7 @@ set -euo pipefail
 
 OUT_DIR="${OUT_DIR:-artifacts}"
 OUT_FILE="${OUT_DIR}/judge-release-bundle.txt"
+OUT_JSON="${OUT_DIR}/judge-release-bundle.json"
 
 mkdir -p "${OUT_DIR}"
 
@@ -42,3 +43,35 @@ timestamp="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 echo "Wrote ${OUT_FILE}"
 
+cat >"${OUT_JSON}" <<EOF
+{
+  "name": "voice-to-action-agent release bundle",
+  "generatedAtUtc": "${timestamp}",
+  "commit": "${commit_hash}",
+  "publicUrls": {
+    "app": "${PUBLIC_APP_URL:-TODO}",
+    "health": "${PUBLIC_HEALTH_URL:-TODO}",
+    "status": "${PUBLIC_STATUS_URL:-TODO}"
+  },
+  "diagram": {
+    "repoPath": "docs/architecture.png",
+    "contestUploadLocation": "${ARCHITECTURE_UPLOAD_URL:-TODO}"
+  },
+  "verificationCommands": [
+    "npm run lint",
+    "npm run typecheck",
+    "npm run test",
+    "npm run eval",
+    "npm run build"
+  ],
+  "placeholderLinks": {
+    "publishedContent": "${PUBLISHED_CONTENT_URL:-TODO}",
+    "gdgProfile": "${GDG_PROFILE_URL:-TODO}"
+  },
+  "screenshots": [
+$(find docs -maxdepth 1 -type f \( -name "screenshot-*.png" -o -name "architecture.png" \) -print | sort | sed 's/.*/    "&",/' | sed '$ s/,$//')
+  ]
+}
+EOF
+
+echo "Wrote ${OUT_JSON}"

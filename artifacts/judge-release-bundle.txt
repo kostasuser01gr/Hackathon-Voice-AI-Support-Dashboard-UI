@@ -1,6 +1,6 @@
 voice-to-action-agent release bundle
-generated_at_utc=2026-03-03T11:31:28Z
-commit=cc04287
+generated_at_utc=2026-03-03T14:08:00Z
+commit=615a3eb
 
 [public_urls]
 app=TODO
@@ -13,6 +13,13 @@ contest_upload_location=TODO
 
 [screenshots]
 docs/architecture.png
+docs/screenshot-actions.png
+docs/screenshot-dashboard.png
+docs/screenshot-history.png
+docs/screenshot-integrations.png
+docs/screenshot-session-detail.png
+docs/screenshot-settings.png
+docs/screenshot-status.png
 
 [verification_commands]
 npm run lint

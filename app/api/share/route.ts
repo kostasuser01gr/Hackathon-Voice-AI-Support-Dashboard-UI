@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { requireRoleFromRequest } from "@/lib/api-guards";
 import { getPresetById } from "@/lib/presets";
-import { defaultSessionReview } from "@/lib/session-meta";
+import { defaultSessionReview, makeApprovalPayloadHash } from "@/lib/session-meta";
 import { createShareToken } from "@/lib/share";
 import { ProcessResponseSchema } from "@/lib/schema";
 
@@ -31,6 +31,7 @@ const BodySchema = z
           topics: z.array(z.string()).default([]),
           urgency: z.enum(["low", "medium", "high"]).default("low"),
           openLoops: z.array(z.string()).default([]),
+          openLoopsCount: z.number().int().min(0).default(0),
         }),
         verifier: z.object({
           ok: z.boolean().default(true),
@@ -40,7 +41,7 @@ const BodySchema = z
         }),
       })
       .default({
-        index: { entities: [], topics: [], urgency: "low", openLoops: [] },
+        index: { entities: [], topics: [], urgency: "low", openLoops: [], openLoopsCount: 0 },
         verifier: { ok: true, score: 100, flags: [], policy: "warn" },
       }),
     approvalEvents: z
@@ -53,6 +54,7 @@ const BodySchema = z
           actorRole: z.enum(["owner", "admin", "agent", "viewer"]),
           timestamp: z.string().trim().min(1),
           note: z.string().trim().optional(),
+          payloadHash: z.string().trim().min(1).optional(),
         }),
       )
       .default([]),
@@ -93,6 +95,19 @@ export async function POST(request: Request) {
   const token = createShareToken({
     ...parsed.data,
     presetId: getPresetById(parsed.data.presetId).id,
+    approvalEvents: parsed.data.approvalEvents.map((event) => ({
+      ...event,
+      payloadHash:
+        event.payloadHash ??
+        makeApprovalPayloadHash({
+          sessionId: event.sessionId,
+          actorId: event.actorId,
+          actorRole: event.actorRole,
+          action: event.action,
+          note: event.note,
+          timestamp: event.timestamp,
+        }),
+    })),
   });
   return NextResponse.json({ token, requestId });
 }

@@ -10,11 +10,14 @@
    - `FEATURE_WAVE1=true`
 5. Optional judge-stable mode:
    - `DEMO_SAFE_MODE=true` (allows processing even if Gemini key is unavailable)
+6. Optional auth hardening:
+   - `SESSION_SIGNING_SECRET=...` to enable signed session cookies
 
 ## 2) Verify quality gates (3 minutes)
 1. `npm run lint`
 2. `npm run typecheck`
 3. `npm run test`
+   - Includes `/api/process` contract snapshot guard
 4. `npm run eval`
 5. `npm run build`
 6. Optional one-command check: `npm run judge:verify`

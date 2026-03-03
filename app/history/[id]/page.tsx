@@ -96,7 +96,7 @@ export default function HistoryDetailPage() {
             tags: [],
             review: payload.session.review ?? defaultSessionReview(),
             analysis: payload.session.analysis ?? {
-              index: { entities: [], topics: [], urgency: "low", openLoops: [] },
+              index: { entities: [], topics: [], urgency: "low", openLoops: [], openLoopsCount: 0 },
               verifier: { ok: true, score: 100, flags: [], policy: "warn" },
             },
             approvalEvents: payload.session.approvalEvents ?? [],

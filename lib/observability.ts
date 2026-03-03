@@ -85,6 +85,7 @@ export function getObservabilitySnapshot() {
     processFailures: state.processFailures,
     safetyFailures: state.safetyFailures,
     averageLatencyMs,
+    p50LatencyMs: percentile(state.latencies, 50),
     p95LatencyMs: percentile(state.latencies, 95),
     successRate,
     integrationJobs: state.integrationJobs,

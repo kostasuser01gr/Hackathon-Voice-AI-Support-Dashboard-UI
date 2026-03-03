@@ -8,6 +8,7 @@ export default async function StatusPage() {
   const config = getAppConfig();
   const metrics = getObservabilitySnapshot();
   const dbHealthy = config.historyMode === "db" ? await pingDbConnection() : true;
+  const degraded = !config.geminiKeyPresent && !config.demoSafeMode;
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8">
@@ -15,6 +16,9 @@ export default async function StatusPage() {
         <h1 className="text-2xl font-semibold">Service Status</h1>
         <p className="mt-2 text-sm text-slate-600">
           Public diagnostics page for deployment verification.
+        </p>
+        <p className="mt-2 text-sm font-semibold text-slate-800">
+          Overall: {degraded ? "degraded" : "healthy"}
         </p>
         <div className="mt-4 space-y-1 text-sm text-slate-800">
           <p>Environment: {process.env.NODE_ENV}</p>
@@ -29,6 +33,7 @@ export default async function StatusPage() {
           <p>Integrations mode: {config.integrationsMode}</p>
           <p>DB connection: {dbHealthy ? "healthy" : "unavailable"}</p>
           <p>Average latency: {metrics.averageLatencyMs} ms</p>
+          <p>P50 latency: {metrics.p50LatencyMs} ms</p>
           <p>P95 latency: {metrics.p95LatencyMs} ms</p>
           <p>
             Success rate: {Math.round(metrics.successRate * 100)}% | Integration jobs queued:{" "}

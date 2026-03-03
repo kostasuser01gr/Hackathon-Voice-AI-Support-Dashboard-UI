@@ -56,6 +56,39 @@ export async function POST(request: Request) {
   const config = getAppConfig();
   const payload = parsed.data;
 
+  if (payload.action === "execute" && !payload.sessionId) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "BAD_REQUEST",
+          detailsCode: "INTEGRATION_EXECUTE_SESSION_REQUIRED",
+          message: "sessionId is required for execute action.",
+          requestId,
+        },
+      },
+      { status: 400 },
+    );
+  }
+
+  if (
+    config.integrationsMode === "live" &&
+    payload.action === "execute" &&
+    payload.payload.dryRunAcknowledged !== true
+  ) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "DRY_RUN_REQUIRED",
+          detailsCode: "INTEGRATION_LIVE_DRY_RUN_REQUIRED",
+          message:
+            "Live mode execute requires payload.dryRunAcknowledged=true after dry-run review.",
+          requestId,
+        },
+      },
+      { status: 409 },
+    );
+  }
+
   if (payload.action === "execute" && payload.sessionId) {
     if (config.historyMode !== "db") {
       return NextResponse.json(
@@ -88,6 +121,9 @@ export async function POST(request: Request) {
 
     const review = sourceSession.review;
     if (!review?.emailApproved || !review?.tasksApproved) {
+      const latestEventId = sourceSession.approval_events?.length
+        ? sourceSession.approval_events[sourceSession.approval_events.length - 1]?.id
+        : null;
       return NextResponse.json(
         {
           error: {
@@ -96,6 +132,12 @@ export async function POST(request: Request) {
             message:
               "Execution blocked until both tasks and email are approved for this session.",
             requestId,
+          },
+          requiredApprovals: {
+            emailApproved: Boolean(review?.emailApproved),
+            tasksApproved: Boolean(review?.tasksApproved),
+            sessionId: sourceSession.id,
+            latestEventId,
           },
         },
         { status: 409 },
@@ -148,4 +190,3 @@ export async function POST(request: Request) {
     { status: 202 },
   );
 }
-

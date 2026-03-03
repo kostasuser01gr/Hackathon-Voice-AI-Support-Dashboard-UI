@@ -205,12 +205,14 @@ export const HealthDiagnosticsSchema = z
     model: z.string(),
     promptVersion: z.string(),
     shareTokenSecretPresent: z.boolean(),
+    sessionSigningSecretPresent: z.boolean(),
     observability: z.object({
       processRequests: z.number().int().nonnegative(),
       processSuccesses: z.number().int().nonnegative(),
       processFailures: z.number().int().nonnegative(),
       safetyFailures: z.number().int().nonnegative(),
       averageLatencyMs: z.number().int().nonnegative(),
+      p50LatencyMs: z.number().int().nonnegative(),
       p95LatencyMs: z.number().int().nonnegative(),
       successRate: z.number().min(0).max(1),
       integrationJobs: z.object({
@@ -235,6 +237,7 @@ export type HealthResponse = z.infer<typeof HealthResponseSchema>;
 
 export const MetricsResponseSchema = z
   .object({
+    requestId: z.string(),
     timestamp: z.string(),
     observability: HealthDiagnosticsSchema.shape.observability,
   })

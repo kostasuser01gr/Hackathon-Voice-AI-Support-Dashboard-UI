@@ -61,6 +61,7 @@ export function deriveSessionIndex(transcript: string, tasks: string[]): Session
     entities: insight.entities,
     topics: insight.topics,
     openLoops: insight.openLoops,
+    openLoopsCount: insight.openLoops.length,
     urgency,
   };
 }

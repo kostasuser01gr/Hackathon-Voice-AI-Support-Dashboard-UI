@@ -536,6 +536,7 @@ export async function POST(request: Request) {
         topics: [],
         urgency: "low",
         openLoops: [],
+        openLoopsCount: 0,
       },
       verifier: {
         ok: true,

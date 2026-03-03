@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "eval": "tsx scripts/eval.ts",
     "docker:build": "docker build -t voice-to-action-agent:local .",
+    "deploy:firebase": "./scripts/deploy-firebase.sh",
     "deploy:gcp": "./scripts/deploy.sh",
     "deploy:precheck": "./scripts/precheck-cloudrun.sh",
     "release:bundle": "./scripts/release-bundle.sh",

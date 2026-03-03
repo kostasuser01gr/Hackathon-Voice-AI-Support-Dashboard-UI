@@ -12,9 +12,11 @@
 - Zod request/response validation.
 - Deterministic safety check + grounding verifier policy (`warn|repair|reject`).
 - Rate limiting and payload size limits.
+- Cookie-first session identity with signed-cookie support and proxy fallback controls.
 
 ## Engineering Quality
 - TypeScript + ESLint + tests + eval harness.
+- `/api/process` contract snapshot test prevents key-order/schema drift.
 - CI pipeline includes lint, typecheck, test, eval, build.
 - Observability counters and latency percentiles via `/api/metrics`.
 
@@ -27,4 +29,3 @@
 - `docs/judge-runbook.md` for zero-to-pass path.
 - Export center, share links, status and health pages.
 - Architecture diagram path in repo: `docs/architecture.png`.
-

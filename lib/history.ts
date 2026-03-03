@@ -2,14 +2,23 @@ import type { PresetId } from "@/lib/presets";
 import type { ProcessResponse } from "@/lib/schema";
 import {
   defaultSessionReview,
+  makeApprovalPayloadHash,
   type ApprovalEvent,
   type SessionAnalysis,
   type SessionReviewState,
 } from "@/lib/session-meta";
 
 const STORAGE_KEY = "voice_to_action_sessions_v4";
+const BACKUP_STORAGE_KEY = "voice_to_action_sessions_v4_backup";
 const HISTORY_EVENT = "voice-to-action-history-updated";
-const MAX_LOCAL_SESSIONS = 25;
+const MAX_LOCAL_SESSIONS = (() => {
+  const parsed = Number.parseInt(process.env.NEXT_PUBLIC_MAX_LOCAL_SESSIONS ?? "25", 10);
+  if (!Number.isFinite(parsed)) {
+    return 25;
+  }
+
+  return Math.max(5, Math.min(200, parsed));
+})();
 
 export type StoredSession = {
   id: string;
@@ -26,6 +35,7 @@ export type StoredSession = {
 
 type HistoryEnvelopeV4 = {
   version: 4;
+  checksum: string;
   sessions: StoredSession[];
 };
 
@@ -53,6 +63,7 @@ function emptyAnalysis(): SessionAnalysis {
       topics: [],
       urgency: "low",
       openLoops: [],
+      openLoopsCount: 0,
     },
     verifier: {
       ok: true,
@@ -61,6 +72,73 @@ function emptyAnalysis(): SessionAnalysis {
       policy: "warn",
     },
   };
+}
+
+function hashString(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function computeEnvelopeChecksum(sessions: StoredSession[]) {
+  return hashString(
+    sessions
+      .map((session) => `${session.id}:${session.createdAt}:${session.data.meta.requestId}`)
+      .join("|"),
+  );
+}
+
+function normalizeApprovalEvents(raw: unknown): ApprovalEvent[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.flatMap((entry): ApprovalEvent[] => {
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
+
+    const candidate = entry as Partial<ApprovalEvent>;
+    if (
+      !candidate.id ||
+      !candidate.sessionId ||
+      !candidate.actorId ||
+      !candidate.actorRole ||
+      !candidate.action ||
+      !candidate.timestamp
+    ) {
+      return [];
+    }
+
+    const payloadHash =
+      typeof candidate.payloadHash === "string" && candidate.payloadHash.trim().length > 0
+        ? candidate.payloadHash
+        : makeApprovalPayloadHash({
+            sessionId: candidate.sessionId,
+            actorId: candidate.actorId,
+            actorRole: candidate.actorRole,
+            action: candidate.action,
+            note: candidate.note,
+            timestamp: candidate.timestamp,
+          });
+
+    return [
+      {
+        id: candidate.id,
+        sessionId: candidate.sessionId,
+        actorId: candidate.actorId,
+        actorRole: candidate.actorRole,
+        action: candidate.action,
+        timestamp: candidate.timestamp,
+        note: candidate.note,
+        payloadHash,
+      },
+    ];
+  });
 }
 
 function normalizeSession(entry: LegacySession): StoredSession | null {
@@ -102,6 +180,13 @@ function normalizeSession(entry: LegacySession): StoredSession | null {
             ? analysis.index.urgency
             : "low",
         openLoops: Array.isArray(analysis.index?.openLoops) ? analysis.index.openLoops : [],
+        openLoopsCount:
+          typeof analysis.index?.openLoopsCount === "number" &&
+          Number.isFinite(analysis.index.openLoopsCount)
+            ? Math.max(0, Math.round(analysis.index.openLoopsCount))
+            : Array.isArray(analysis.index?.openLoops)
+              ? analysis.index.openLoops.length
+              : 0,
       },
       verifier: {
         ok: Boolean(analysis.verifier?.ok ?? true),
@@ -118,7 +203,7 @@ function normalizeSession(entry: LegacySession): StoredSession | null {
             : "warn",
       },
     },
-    approvalEvents: Array.isArray(entry.approvalEvents) ? entry.approvalEvents : [],
+    approvalEvents: normalizeApprovalEvents(entry.approvalEvents),
     data: entry.data as ProcessResponse,
   };
 }
@@ -138,6 +223,7 @@ function toEnvelope(input: unknown): HistoryEnvelopeV4 {
 
     return {
       version: 4,
+      checksum: computeEnvelopeChecksum(sessions),
       sessions,
     };
   }
@@ -157,6 +243,7 @@ function toEnvelope(input: unknown): HistoryEnvelopeV4 {
 
     return {
       version: 4,
+      checksum: computeEnvelopeChecksum(sessions),
       sessions,
     };
   }
@@ -167,33 +254,80 @@ function toEnvelope(input: unknown): HistoryEnvelopeV4 {
     return {
       version: 4,
       sessions: migrated.filter((entry) => Boolean(entry)) as StoredSession[],
+      checksum: computeEnvelopeChecksum(
+        migrated.filter((entry) => Boolean(entry)) as StoredSession[],
+      ),
     };
   }
 
   return {
     version: 4,
+    checksum: computeEnvelopeChecksum([]),
     sessions: [],
   };
 }
 
 function readEnvelope(): HistoryEnvelopeV4 {
   if (!isBrowser()) {
-    return { version: 4, sessions: [] };
+    return { version: 4, checksum: computeEnvelopeChecksum([]), sessions: [] };
   }
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return { version: 4, sessions: [] };
+      return { version: 4, checksum: computeEnvelopeChecksum([]), sessions: [] };
     }
 
     const parsed = JSON.parse(raw) as unknown;
     const envelope = toEnvelope(parsed);
+    const normalized: HistoryEnvelopeV4 = {
+      version: 4,
+      checksum: computeEnvelopeChecksum(envelope.sessions),
+      sessions: envelope.sessions,
+    };
+    const hasValidChecksum =
+      typeof (parsed as { checksum?: unknown })?.checksum === "string" &&
+      (parsed as { checksum?: string }).checksum === normalized.checksum;
 
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(envelope));
-    return envelope;
+    if (!hasValidChecksum) {
+      const backupRaw = window.localStorage.getItem(BACKUP_STORAGE_KEY);
+      if (backupRaw) {
+        try {
+          const backupParsed = JSON.parse(backupRaw) as unknown;
+          const backupEnvelope = toEnvelope(backupParsed);
+          const backupChecksum = computeEnvelopeChecksum(backupEnvelope.sessions);
+          if (
+            typeof (backupParsed as { checksum?: unknown })?.checksum === "string" &&
+            (backupParsed as { checksum?: string }).checksum === backupChecksum
+          ) {
+            const recovered: HistoryEnvelopeV4 = {
+              version: 4,
+              checksum: backupChecksum,
+              sessions: backupEnvelope.sessions,
+            };
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(recovered));
+            return recovered;
+          }
+        } catch {
+          // Ignore invalid backup and continue with repaired envelope.
+        }
+      }
+    }
+
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    return normalized;
   } catch {
-    return { version: 4, sessions: [] };
+    try {
+      const backupRaw = window.localStorage.getItem(BACKUP_STORAGE_KEY);
+      if (backupRaw) {
+        const backupParsed = JSON.parse(backupRaw) as unknown;
+        return toEnvelope(backupParsed);
+      }
+    } catch {
+      // Ignore backup parse errors.
+    }
+
+    return { version: 4, checksum: computeEnvelopeChecksum([]), sessions: [] };
   }
 }
 
@@ -202,7 +336,17 @@ function writeEnvelope(envelope: HistoryEnvelopeV4) {
     return;
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(envelope));
+  const normalized: HistoryEnvelopeV4 = {
+    version: 4,
+    checksum: computeEnvelopeChecksum(envelope.sessions),
+    sessions: envelope.sessions,
+  };
+  const currentRaw = window.localStorage.getItem(STORAGE_KEY);
+  if (currentRaw) {
+    window.localStorage.setItem(BACKUP_STORAGE_KEY, currentRaw);
+  }
+
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
   window.dispatchEvent(new Event(HISTORY_EVENT));
 }
 
@@ -220,6 +364,7 @@ export function saveLocalSession(session: StoredSession) {
 
   writeEnvelope({
     version: 4,
+    checksum: "",
     sessions: next,
   });
 }
@@ -228,6 +373,7 @@ export function removeLocalSession(sessionId: string) {
   const next = listLocalSessions().filter((session) => session.id !== sessionId);
   writeEnvelope({
     version: 4,
+    checksum: "",
     sessions: next,
   });
 }
@@ -235,6 +381,7 @@ export function removeLocalSession(sessionId: string) {
 export function clearAllLocalSessions() {
   writeEnvelope({
     version: 4,
+    checksum: "",
     sessions: [],
   });
 }
@@ -270,6 +417,7 @@ export function updateLocalSession(
 
   writeEnvelope({
     version: 4,
+    checksum: "",
     sessions: next,
   });
 }
@@ -283,6 +431,7 @@ export function pruneLocalSessions(retentionDays: number) {
 
   writeEnvelope({
     version: 4,
+    checksum: "",
     sessions: next,
   });
 }

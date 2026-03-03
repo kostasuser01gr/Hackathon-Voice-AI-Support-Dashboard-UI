@@ -13,6 +13,7 @@ export type AppConfig = {
   geminiModel: string;
   promptVersion: string;
   shareTokenSecretPresent: boolean;
+  sessionSigningSecretPresent: boolean;
   featureWave1: boolean;
   verifierPolicy: VerifierPolicy;
   integrationsMode: IntegrationsMode;
@@ -93,6 +94,7 @@ export function getAppConfig(): AppConfig {
     geminiModel: DEFAULT_GEMINI_MODEL,
     promptVersion: process.env.PROMPT_VERSION?.trim() || DEFAULT_PROMPT_VERSION,
     shareTokenSecretPresent: Boolean(process.env.SHARE_TOKEN_SECRET),
+    sessionSigningSecretPresent: Boolean(process.env.SESSION_SIGNING_SECRET),
     featureWave1: parseBoolean(process.env.FEATURE_WAVE1, true),
     verifierPolicy: parseVerifierPolicy(process.env.VERIFIER_POLICY),
     integrationsMode: parseIntegrationsMode(process.env.INTEGRATIONS_MODE),

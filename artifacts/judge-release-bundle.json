@@ -1,0 +1,35 @@
+{
+  "name": "voice-to-action-agent release bundle",
+  "generatedAtUtc": "2026-03-03T14:08:00Z",
+  "commit": "615a3eb",
+  "publicUrls": {
+    "app": "TODO",
+    "health": "TODO",
+    "status": "TODO"
+  },
+  "diagram": {
+    "repoPath": "docs/architecture.png",
+    "contestUploadLocation": "TODO"
+  },
+  "verificationCommands": [
+    "npm run lint",
+    "npm run typecheck",
+    "npm run test",
+    "npm run eval",
+    "npm run build"
+  ],
+  "placeholderLinks": {
+    "publishedContent": "TODO",
+    "gdgProfile": "TODO"
+  },
+  "screenshots": [
+    "docs/architecture.png",
+    "docs/screenshot-actions.png",
+    "docs/screenshot-dashboard.png",
+    "docs/screenshot-history.png",
+    "docs/screenshot-integrations.png",
+    "docs/screenshot-session-detail.png",
+    "docs/screenshot-settings.png",
+    "docs/screenshot-status.png"
+  ]
+}

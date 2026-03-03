@@ -23,6 +23,7 @@ export async function GET() {
       model: config.geminiModel,
       promptVersion: config.promptVersion,
       shareTokenSecretPresent: config.shareTokenSecretPresent,
+      sessionSigningSecretPresent: config.sessionSigningSecretPresent,
       observability,
     },
   });

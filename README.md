@@ -146,6 +146,8 @@ Optional:
 - `VERIFIER_POLICY=warn|repair|reject` (default `warn`)
 - `INTEGRATIONS_MODE=mock|live` (default `mock`)
 - `SHARE_TOKEN_SECRET`
+- `SESSION_SIGNING_SECRET` (recommended for production)
+- `NEXT_PUBLIC_MAX_LOCAL_SESSIONS` (default `25`, min `5`, max `200`)
 - `DATABASE_URL` (required only when `HISTORY_MODE=db`)
 
 See `.env.local.example`.
@@ -154,7 +156,7 @@ See `.env.local.example`.
 
 Local:
 - stores last 25 sessions
-- schema versioned localStorage migration
+- schema versioned localStorage migration with checksum + backup recovery
 - pin/delete/update review metadata
 
 DB:
@@ -170,6 +172,7 @@ DB:
 
 ## Deployment automation proof (bonus)
 
+- `scripts/deploy-firebase.sh` one-command Firebase Hosting deploy (`npm run deploy:firebase`)
 - `scripts/deploy.sh` one-command Cloud Run deploy
 - `scripts/precheck-cloudrun.sh` billing/API/env preflight
 - `scripts/release-bundle.sh` judge artifact bundle generator
@@ -178,6 +181,12 @@ DB:
 - `cloudbuild.yaml` Cloud Build pipeline deploy
 - `.github/workflows/deploy-gcp.yml` GitHub Actions deploy to GCP
 - `infra/main.tf` Terraform Cloud Run service
+
+### Firebase deploy
+
+```bash
+PROJECT_ID=<your-gcp-project> npm run deploy:firebase
+```
 
 ## Docker option
 

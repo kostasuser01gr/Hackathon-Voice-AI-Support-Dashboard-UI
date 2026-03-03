@@ -19,12 +19,13 @@ describe("share tokens", () => {
         comments: [],
       },
       analysis: {
-        index: {
-          entities: [],
-          topics: [],
-          urgency: "low",
-          openLoops: [],
-        },
+          index: {
+            entities: [],
+            topics: [],
+            urgency: "low",
+            openLoops: [],
+            openLoopsCount: 0,
+          },
         verifier: {
           ok: true,
           score: 100,

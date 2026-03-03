@@ -135,6 +135,76 @@ describe("processPayload", () => {
       "safety_check",
     ]);
   });
+
+  it("returns verifier rejection under reject policy", async () => {
+    process.env.VERIFIER_POLICY = "reject";
+    try {
+      await expect(
+        processPayload(
+          {
+            inputMode: "text",
+            text: "Please send status to Priya.",
+            presetId: "support_recap",
+          },
+          {
+            requestId: "req-reject-policy",
+            generateStructuredResponse: async ({ inputMode, transcript, requestId }) => ({
+              output: {
+                inputMode,
+                transcript,
+                summary: "Contract signed with Marcus and legal counsel yesterday.",
+                actions: {
+                  taskList: ["Coordinate legal closure for contract board"],
+                  emailDraft:
+                    "Subject: Contract Board\\n\\nLegal closure is required.\\n\\nPlease review before sending.",
+                },
+                auditTrail: [
+                  {
+                    step: "capture",
+                    timestamp: "2026-03-02T10:00:00.000Z",
+                    details: "Captured",
+                  },
+                  {
+                    step: "transcribe",
+                    timestamp: "2026-03-02T10:00:00.000Z",
+                    details: "Transcribed",
+                  },
+                  {
+                    step: "extract",
+                    timestamp: "2026-03-02T10:00:00.000Z",
+                    details: "Extracted",
+                  },
+                  {
+                    step: "draft",
+                    timestamp: "2026-03-02T10:00:00.000Z",
+                    details: "Drafted",
+                  },
+                  {
+                    step: "safety_check",
+                    timestamp: "2026-03-02T10:00:00.000Z",
+                    details: "Checked",
+                  },
+                ],
+                meta: {
+                  requestId,
+                  model: "gemini-2.0-flash",
+                  latencyMs: 1,
+                  validation: "passed",
+                  fallbackUsed: false,
+                },
+              },
+              model: "gemini-2.0-flash",
+            }),
+          },
+        ),
+      ).rejects.toMatchObject({
+        code: "VERIFIER_FAILED",
+        status: 422,
+      });
+    } finally {
+      delete process.env.VERIFIER_POLICY;
+    }
+  });
 });
 
 describe("POST /api/process", () => {

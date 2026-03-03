@@ -27,6 +27,47 @@ function tokenize(text: string) {
     .filter((token) => token.length > 2);
 }
 
+function tokenWindows(tokens: string[], size = 4) {
+  const windows = new Set<string>();
+  if (tokens.length === 0) {
+    return windows;
+  }
+
+  if (tokens.length <= size) {
+    windows.add(tokens.join(" "));
+    return windows;
+  }
+
+  for (let index = 0; index <= tokens.length - size; index += 1) {
+    windows.add(tokens.slice(index, index + size).join(" "));
+  }
+
+  return windows;
+}
+
+const ACTION_VERBS = new Set([
+  "send",
+  "schedule",
+  "follow",
+  "review",
+  "prepare",
+  "confirm",
+  "update",
+  "share",
+  "call",
+  "email",
+  "draft",
+  "assign",
+  "check",
+  "resolve",
+  "investigate",
+  "deliver",
+  "complete",
+  "track",
+  "create",
+  "finalize",
+]);
+
 function extractEntityTokens(text: string) {
   const entities = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/g) ?? [];
   return entities.map((entity) => entity.toLowerCase());
@@ -50,7 +91,9 @@ function overlapRatio(sourceTokens: Set<string>, line: string) {
 }
 
 export function runGroundingVerifier(input: VerifierInput): VerifierOutput {
-  const transcriptTokens = new Set(tokenize(input.transcript));
+  const transcriptTokenList = tokenize(input.transcript);
+  const transcriptTokens = new Set(transcriptTokenList);
+  const transcriptWindows = tokenWindows(transcriptTokenList, 4);
   const transcriptEntityTokens = new Set(extractEntityTokens(input.transcript));
   const flags: string[] = [];
 
@@ -84,6 +127,49 @@ export function runGroundingVerifier(input: VerifierInput): VerifierOutput {
     score -= Math.min(40, lowOverlapTasks.length * 12);
   }
 
+  const nonActionTasks = taskList.filter((task) => {
+    const firstToken = tokenize(task)[0];
+    if (!firstToken) {
+      return true;
+    }
+    if (ACTION_VERBS.has(firstToken)) {
+      return false;
+    }
+    return !/^(to|please)$/i.test(firstToken);
+  });
+  if (nonActionTasks.length > 0) {
+    flags.push("task_non_actionable");
+    score -= Math.min(20, nonActionTasks.length * 6);
+  }
+
+  const outputLines = [summary, ...taskList, emailDraft]
+    .join("\n")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const lowWindowLines = outputLines.filter((line) => {
+    const tokens = tokenize(line);
+    if (tokens.length < 4) {
+      return false;
+    }
+    const windows = tokenWindows(tokens, 4);
+    if (!windows.size) {
+      return false;
+    }
+
+    let matches = 0;
+    for (const window of windows) {
+      if (transcriptWindows.has(window)) {
+        matches += 1;
+      }
+    }
+    return matches / windows.size < 0.1;
+  });
+  if (lowWindowLines.length > 0) {
+    flags.push("token_window_mismatch");
+    score -= Math.min(20, lowWindowLines.length * 6);
+  }
+
   const outputEntities = new Set([
     ...extractEntityTokens(summary),
     ...extractEntityTokens(taskList.join("\n")),
@@ -94,6 +180,7 @@ export function runGroundingVerifier(input: VerifierInput): VerifierOutput {
   );
   if (leakedEntities.length > 0) {
     flags.push("entity_leakage");
+    flags.push(`entity_mismatch:${leakedEntities.slice(0, 3).join(",")}`);
     score -= Math.min(30, leakedEntities.length * 6);
   }
 
@@ -119,6 +206,15 @@ export function runGroundingVerifier(input: VerifierInput): VerifierOutput {
       if (!taskList.length && /\b(please|need to|can you|follow up|schedule|send)\b/i.test(input.transcript)) {
         taskList = ["Follow up on explicitly requested items from transcript."];
       }
+    }
+    if (nonActionTasks.length > 0) {
+      taskList = taskList.map((task) => {
+        const firstToken = tokenize(task)[0];
+        if (firstToken && ACTION_VERBS.has(firstToken)) {
+          return task;
+        }
+        return `Follow up: ${task}`;
+      });
     }
 
     if (!/^subject:/i.test(emailDraft)) {

@@ -17,7 +17,7 @@ import {
 import { normalizeLanguage, t } from "@/lib/i18n";
 import { deriveTranscriptInsights } from "@/lib/intelligence";
 import { DEFAULT_PRESET_ID, PRESETS, type PresetId } from "@/lib/presets";
-import { defaultSessionReview } from "@/lib/session-meta";
+import { defaultSessionReview, makeApprovalPayloadHash } from "@/lib/session-meta";
 import {
   getUserSettingsServerSnapshot,
   getUserSettingsSnapshot,
@@ -100,6 +100,7 @@ function defaultAnalysis() {
       topics: [],
       urgency: "low" as const,
       openLoops: [],
+      openLoopsCount: 0,
     },
     verifier: {
       ok: true,
@@ -679,6 +680,7 @@ export function VoiceActionDashboard({
               ? urgencyRaw
               : "low",
           openLoops: insightsFromTranscript.openLoops,
+          openLoopsCount: insightsFromTranscript.openLoops.length,
         },
         verifier: {
           ok: verifierOk,
@@ -724,14 +726,24 @@ export function VoiceActionDashboard({
     action: "approve_email" | "approve_tasks" | "comment" | "execute",
     note?: string,
   ) => {
+    const timestamp = new Date().toISOString();
+    const sessionId = activeServerSessionId ?? activeLocalSessionId ?? "local-session";
     const event = {
       id: createSessionId(),
-      sessionId: activeServerSessionId ?? activeLocalSessionId ?? "local-session",
+      sessionId,
       action,
       actorId: sessionIdentity.email || "demo-user",
       actorRole: sessionIdentity.role,
-      timestamp: new Date().toISOString(),
+      timestamp,
       note,
+      payloadHash: makeApprovalPayloadHash({
+        sessionId,
+        actorId: sessionIdentity.email || "demo-user",
+        actorRole: sessionIdentity.role,
+        action,
+        note,
+        timestamp,
+      }),
     };
 
     setApprovalEvents((previous) => [event, ...previous].slice(0, 40));
@@ -1272,6 +1284,15 @@ export function VoiceActionDashboard({
                     Open loops:{" "}
                     {insights.openLoops.length ? insights.openLoops.join(" | ") : "none"}
                   </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Verifier: {analysis.verifier.score}/100 (
+                    {analysis.verifier.ok ? "pass" : "flagged"})
+                  </p>
+                  {analysis.verifier.flags.length > 0 && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Flags: {analysis.verifier.flags.join(", ")}
+                    </p>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">

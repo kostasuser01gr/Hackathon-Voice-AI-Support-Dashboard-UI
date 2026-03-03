@@ -33,5 +33,33 @@ describe("runGroundingVerifier", () => {
     );
     expect(result.report.score).toBeGreaterThanOrEqual(70);
   });
-});
 
+  it("flags non-actionable tasks and token window mismatch", () => {
+    const result = runGroundingVerifier({
+      transcript: "Please send release notes to Maya and schedule QA sync tomorrow.",
+      summary: "A separate finance board discussion happened with external counsel.",
+      taskList: ["Board decision documentation for legal counsel"],
+      emailDraft:
+        "Subject: External Board Update\n\nThis references counsel actions.\n\nPlease review before sending.",
+      policy: "warn",
+    });
+
+    expect(result.report.ok).toBe(false);
+    expect(result.report.flags).toContain("task_non_actionable");
+    expect(result.report.flags).toContain("token_window_mismatch");
+  });
+
+  it("keeps verifier failed output under reject policy for route-level blocking", () => {
+    const result = runGroundingVerifier({
+      transcript: "Schedule the support handoff and send status to Priya.",
+      summary: "A new contract was signed by Marcus yesterday.",
+      taskList: ["Coordinate contract legal closure"],
+      emailDraft:
+        "Subject: Contract Closure\n\nProceed with legal closure.\n\nPlease review before sending.",
+      policy: "reject",
+    });
+
+    expect(result.report.ok).toBe(false);
+    expect(result.report.flags.some((flag) => flag.startsWith("entity_mismatch:"))).toBe(true);
+  });
+});

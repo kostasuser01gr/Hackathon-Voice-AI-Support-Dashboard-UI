@@ -4,6 +4,7 @@ import { getAppConfig } from "@/lib/config";
 import type { ProcessResponse } from "@/lib/schema";
 import {
   defaultSessionReview,
+  makeApprovalPayloadHash,
   type ApprovalEvent,
   type SessionAnalysis,
   type SessionReviewState,
@@ -57,6 +58,7 @@ function normalizeAnalysis(raw: unknown): SessionAnalysis {
       topics: [],
       urgency: "low",
       openLoops: [],
+      openLoopsCount: 0,
     },
     verifier: {
       ok: true,
@@ -89,6 +91,12 @@ function normalizeAnalysis(raw: unknown): SessionAnalysis {
       openLoops: Array.isArray(index.openLoops)
         ? index.openLoops.filter((entry) => typeof entry === "string")
         : [],
+      openLoopsCount:
+        typeof index.openLoopsCount === "number" && Number.isFinite(index.openLoopsCount)
+          ? Math.max(0, Math.round(index.openLoopsCount))
+          : Array.isArray(index.openLoops)
+            ? index.openLoops.filter((entry) => typeof entry === "string").length
+            : 0,
     },
     verifier: {
       ok: Boolean(verifier.ok),
@@ -112,20 +120,47 @@ function normalizeApprovalEvents(input: unknown): ApprovalEvent[] {
     return [];
   }
 
-  return input.filter((entry): entry is ApprovalEvent => {
+  return input.flatMap((entry): ApprovalEvent[] => {
     if (!entry || typeof entry !== "object") {
-      return false;
+      return [];
     }
 
     const candidate = entry as Partial<ApprovalEvent>;
-    return Boolean(
-      candidate.id &&
-        candidate.sessionId &&
-        candidate.actorId &&
-        candidate.actorRole &&
-        candidate.action &&
-        candidate.timestamp,
-    );
+    if (
+      !candidate.id ||
+      !candidate.sessionId ||
+      !candidate.actorId ||
+      !candidate.actorRole ||
+      !candidate.action ||
+      !candidate.timestamp
+    ) {
+      return [];
+    }
+
+    const payloadHash =
+      typeof candidate.payloadHash === "string" && candidate.payloadHash.trim().length > 0
+        ? candidate.payloadHash
+        : makeApprovalPayloadHash({
+            sessionId: candidate.sessionId,
+            actorId: candidate.actorId,
+            actorRole: candidate.actorRole,
+            action: candidate.action,
+            note: candidate.note,
+            timestamp: candidate.timestamp,
+          });
+
+    return [
+      {
+        id: candidate.id,
+        sessionId: candidate.sessionId,
+        actorId: candidate.actorId,
+        actorRole: candidate.actorRole,
+        action: candidate.action,
+        timestamp: candidate.timestamp,
+        note: candidate.note,
+        payloadHash,
+      },
+    ];
   });
 }
 

@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 export type SessionRole = "owner" | "admin" | "agent" | "viewer";
 
@@ -20,21 +21,93 @@ export const DEFAULT_SESSION: SessionData = {
   role: "owner",
 };
 
-function decodeSession(raw: string): SessionData | null {
+type ParsedSessionCookie = {
+  session: SessionData;
+  signed: boolean;
+};
+
+const SESSION_SIGNATURE_PREFIX = "v1";
+
+function normalizeSession(raw: Partial<SessionData>): SessionData | null {
+  const parsedRole: SessionRole | null =
+    raw.role === "owner" || raw.role === "admin" || raw.role === "agent" || raw.role === "viewer"
+      ? raw.role
+      : null;
+  if (!raw.userId || !raw.workspaceId || !parsedRole) {
+    return null;
+  }
+
+  return {
+    ...DEFAULT_SESSION,
+    ...raw,
+    role: parsedRole,
+  };
+}
+
+function getSessionSigningSecret() {
+  return process.env.SESSION_SIGNING_SECRET?.trim() || null;
+}
+
+function signPayload(payloadBase64Url: string, secret: string) {
+  const hmac = createHmac("sha256", secret);
+  hmac.update(`${SESSION_SIGNATURE_PREFIX}.${payloadBase64Url}`);
+  return hmac.digest("base64url");
+}
+
+function verifySignature(payloadBase64Url: string, signatureBase64Url: string, secret: string) {
+  const expected = signPayload(payloadBase64Url, secret);
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const providedBuffer = Buffer.from(signatureBase64Url, "utf8");
+
+  if (expectedBuffer.length !== providedBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, providedBuffer);
+}
+
+function decodeSession(raw: string): ParsedSessionCookie | null {
   try {
-    const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as SessionData;
-    if (!parsed.userId || !parsed.workspaceId || !parsed.role) {
+    const secret = getSessionSigningSecret();
+    const [payloadBase64Url, signatureBase64Url, ...rest] = raw.split(".");
+    if (!payloadBase64Url || rest.length > 0) {
       return null;
     }
 
-    return parsed;
+    const signed = Boolean(signatureBase64Url);
+    if (secret) {
+      if (!signed || !signatureBase64Url) {
+        return null;
+      }
+      if (!verifySignature(payloadBase64Url, signatureBase64Url, secret)) {
+        return null;
+      }
+    }
+
+    const parsed = JSON.parse(Buffer.from(payloadBase64Url, "base64url").toString("utf8")) as Partial<SessionData>;
+    const session = normalizeSession(parsed);
+    if (!session) {
+      return null;
+    }
+
+    return {
+      session,
+      signed,
+    };
   } catch {
     return null;
   }
 }
 
 function encodeSession(session: SessionData) {
-  return Buffer.from(JSON.stringify(session), "utf8").toString("base64url");
+  const payloadBase64Url = Buffer.from(JSON.stringify(session), "utf8").toString("base64url");
+  const secret = getSessionSigningSecret();
+  if (!secret) {
+    return payloadBase64Url;
+  }
+
+  const signatureBase64Url = signPayload(payloadBase64Url, secret);
+  return `${payloadBase64Url}.${signatureBase64Url}`;
 }
 
 export function parseSessionCookieValue(raw?: string | null) {
@@ -56,7 +129,7 @@ export async function getServerSession() {
     return DEFAULT_SESSION;
   }
 
-  return decodeSession(value) ?? DEFAULT_SESSION;
+  return decodeSession(value)?.session ?? DEFAULT_SESSION;
 }
 
 export async function setServerSession(session: Partial<SessionData>) {
@@ -82,4 +155,17 @@ export async function setServerSession(session: Partial<SessionData>) {
 export async function clearServerSession() {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE);
+}
+
+export function maskEmail(email: string) {
+  const [local, domain] = email.split("@");
+  if (!local || !domain) {
+    return "hidden";
+  }
+
+  if (local.length <= 2) {
+    return `${local[0] ?? "*"}*@${domain}`;
+  }
+
+  return `${local.slice(0, 2)}***@${domain}`;
 }
