@@ -193,6 +193,18 @@ DB:
 PROJECT_ID=<your-gcp-project> npm run deploy:firebase
 ```
 
+### Cloud Run deploy
+
+```bash
+PROJECT_ID=<your-gcp-project> GEMINI_API_KEY=<key> npm run deploy:gcp
+```
+
+Demo-safe fallback deploy (no live Gemini calls):
+
+```bash
+PROJECT_ID=<your-gcp-project> DEMO_SAFE_MODE=true npm run deploy:gcp
+```
+
 ## Runtime guardian and attack prevention
 
 - Background guardian loop evaluates health score continuously (status: `healthy|degraded|critical`).
