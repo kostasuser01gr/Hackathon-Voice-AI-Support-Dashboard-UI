@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "scan": "npm audit --audit-level=high",
     "eval": "tsx scripts/eval.ts",
     "docker:build": "docker build -t voice-to-action-agent:local .",
     "deploy:firebase": "./scripts/deploy-firebase.sh",

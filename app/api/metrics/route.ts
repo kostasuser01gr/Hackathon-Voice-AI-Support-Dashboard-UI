@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { requireRoleFromRequest } from "@/lib/api-guards";
+import { getGuardianSnapshot, startRuntimeGuardian } from "@/lib/guardian";
 import { getObservabilitySnapshot } from "@/lib/observability";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const requestId = crypto.randomUUID();
+  startRuntimeGuardian();
   const { denied } = requireRoleFromRequest(
     request,
     requestId,
@@ -21,5 +23,6 @@ export async function GET(request: Request) {
     requestId,
     timestamp: new Date().toISOString(),
     observability: getObservabilitySnapshot(),
+    guardian: getGuardianSnapshot(),
   });
 }

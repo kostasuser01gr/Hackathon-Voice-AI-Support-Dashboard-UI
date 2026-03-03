@@ -260,6 +260,14 @@ export default function SettingsPage() {
                 Burst limit/10s: {health?.diagnostics.rateLimitBurstPer10s ?? "unknown"}
               </p>
               <p>Max input chars: {health?.diagnostics.maxInputChars ?? "unknown"}</p>
+              <p>Guardian enabled: {health?.diagnostics.guardianEnabled ? "yes" : "no"}</p>
+              <p>Guardian interval: {health?.diagnostics.guardianIntervalMs ?? "unknown"} ms</p>
+              <p>
+                Security block minutes: {health?.diagnostics.securityBlockMinutes ?? "unknown"}
+              </p>
+              <p>
+                Security risk threshold: {health?.diagnostics.securityRiskThreshold ?? "unknown"}
+              </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
               <p>Last latency: {settings.lastLatencyMs ?? "-"} ms</p>
@@ -301,6 +309,11 @@ export default function SettingsPage() {
                 {health?.diagnostics.observability.integrationJobs.completed ?? 0}, failed:{" "}
                 {health?.diagnostics.observability.integrationJobs.failed ?? 0}, retried:{" "}
                 {health?.diagnostics.observability.integrationJobs.retried ?? 0}
+              </p>
+              <p>
+                Guardian status: {health?.diagnostics.guardian.status ?? "unknown"} | Health
+                score: {health?.diagnostics.guardian.healthScore ?? "unknown"} | Blocked clients:{" "}
+                {health?.diagnostics.guardian.security.blockedClients ?? 0}
               </p>
             </div>
           </div>

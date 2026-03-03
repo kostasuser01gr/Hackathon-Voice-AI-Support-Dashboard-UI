@@ -13,6 +13,7 @@
 - Deterministic safety check + grounding verifier policy (`warn|repair|reject`).
 - Rate limiting and payload size limits.
 - Cookie-first session identity with signed-cookie support and proxy fallback controls.
+- Runtime guardian + security shield for live risk scoring and temporary abuse blocking.
 
 ## Engineering Quality
 - TypeScript + ESLint + tests + eval harness.

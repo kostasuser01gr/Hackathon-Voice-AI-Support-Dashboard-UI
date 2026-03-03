@@ -50,6 +50,20 @@
   2. Clear browser cookies for the app domain and re-sync session
   3. Re-run `/api/me` and verify `authSource` response
 
+## Security shield blocked requests
+- Symptom: `/api/process` returns `403 SECURITY_BLOCKED`.
+- Fix:
+  1. Wait for `SECURITY_BLOCK_MINUTES` window to expire
+  2. Reduce malformed retries / RBAC failures from the same client fingerprint
+  3. Tune `SECURITY_RISK_THRESHOLD` for your environment
+
+## Guardian degraded/critical
+- Symptom: `/api/health` guardian status is `degraded` or `critical`.
+- Fix:
+  1. Check `/api/metrics` for success-rate and p95 latency pressure
+  2. Reduce request bursts or raise capacity
+  3. Temporarily set `VERIFIER_POLICY=reject` during abusive traffic
+
 ## Local port conflict
 - Symptom: `npm run dev` fails because port 3000 is in use.
 - Fix:

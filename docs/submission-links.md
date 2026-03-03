@@ -3,9 +3,9 @@
 ## Required
 
 - Public deployment URL (Firebase Hosting):
-  - https://chatgpt-ops--hackathon-proof-x3amxlfx.web.app
+  - https://chatgpt-ops.web.app
 - Health URL:
-  - https://chatgpt-ops--hackathon-proof-x3amxlfx.web.app/health.json
+  - https://chatgpt-ops.web.app/health.json
 - Architecture diagram in repo:
   - `docs/architecture.png`
 

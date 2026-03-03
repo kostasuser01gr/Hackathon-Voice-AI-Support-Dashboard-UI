@@ -206,6 +206,10 @@ export const HealthDiagnosticsSchema = z
     promptVersion: z.string(),
     shareTokenSecretPresent: z.boolean(),
     sessionSigningSecretPresent: z.boolean(),
+    guardianEnabled: z.boolean(),
+    guardianIntervalMs: z.number().int().positive(),
+    securityBlockMinutes: z.number().int().positive(),
+    securityRiskThreshold: z.number().int().positive(),
     observability: z.object({
       processRequests: z.number().int().nonnegative(),
       processSuccesses: z.number().int().nonnegative(),
@@ -220,6 +224,20 @@ export const HealthDiagnosticsSchema = z
         completed: z.number().int().nonnegative(),
         failed: z.number().int().nonnegative(),
         retried: z.number().int().nonnegative(),
+      }),
+    }),
+    guardian: z.object({
+      enabled: z.boolean(),
+      status: z.enum(["healthy", "degraded", "critical"]),
+      healthScore: z.number().int().min(0).max(100),
+      startedAt: z.string().nullable(),
+      lastEvaluatedAt: z.string().nullable(),
+      activeMitigations: z.array(z.string()),
+      reasons: z.array(z.string()),
+      security: z.object({
+        trackedClients: z.number().int().nonnegative(),
+        blockedClients: z.number().int().nonnegative(),
+        totalSignals: z.number().int().nonnegative(),
       }),
     }),
   })
@@ -240,6 +258,7 @@ export const MetricsResponseSchema = z
     requestId: z.string(),
     timestamp: z.string(),
     observability: HealthDiagnosticsSchema.shape.observability,
+    guardian: HealthDiagnosticsSchema.shape.guardian,
   })
   .strict();
 

@@ -128,6 +128,7 @@ Validation path:
 3. Zod response validation
 4. Deterministic `safety_check`
 5. Quality scoring and audit notes
+6. Runtime security shield + guardian health model
 
 ## Environment variables
 
@@ -148,6 +149,10 @@ Optional:
 - `SHARE_TOKEN_SECRET`
 - `SESSION_SIGNING_SECRET` (recommended for production)
 - `NEXT_PUBLIC_MAX_LOCAL_SESSIONS` (default `25`, min `5`, max `200`)
+- `GUARDIAN_ENABLED=true|false` (default `true`)
+- `GUARDIAN_INTERVAL_MS` (default `10000`)
+- `SECURITY_BLOCK_MINUTES` (default `5`)
+- `SECURITY_RISK_THRESHOLD` (default `100`)
 - `DATABASE_URL` (required only when `HISTORY_MODE=db`)
 
 See `.env.local.example`.
@@ -187,6 +192,16 @@ DB:
 ```bash
 PROJECT_ID=<your-gcp-project> npm run deploy:firebase
 ```
+
+## Runtime guardian and attack prevention
+
+- Background guardian loop evaluates health score continuously (status: `healthy|degraded|critical`).
+- Temporary security shield blocks abusive client fingerprints on repeated malicious signals.
+- Signals include malformed payload bursts, RBAC denials, repeated rate-limit abuse, and model/safety failures.
+- Guardian telemetry is exposed in:
+  - `GET /api/health`
+  - `GET /api/metrics`
+  - `GET /api/guardian`
 
 ## Docker option
 

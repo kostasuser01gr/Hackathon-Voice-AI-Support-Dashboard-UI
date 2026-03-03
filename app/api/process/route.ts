@@ -22,9 +22,11 @@ import { getPresetById } from "@/lib/presets";
 import { neutralizeProfanity } from "@/lib/profanity";
 import { scoreQuality } from "@/lib/quality";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { getGuardianSnapshot, startRuntimeGuardian } from "@/lib/guardian";
 import { ensureRole } from "@/lib/rbac";
 import { getSessionFromRequest } from "@/lib/request-session";
 import { runSafetyCheck } from "@/lib/safety";
+import { isClientBlocked, trackSecuritySignal } from "@/lib/securityShield";
 import { defaultSessionReview, type SessionAnalysis } from "@/lib/session-meta";
 import { runGroundingVerifier } from "@/lib/verifier";
 import {
@@ -453,19 +455,43 @@ export async function processPayload(
 
 export async function POST(request: Request) {
   const config = getAppConfig();
+  startRuntimeGuardian();
   const requestId = crypto.randomUUID();
   const correlationId = request.headers.get("x-correlation-id") ?? requestId;
   trackProcessRequest();
 
+  const clientIp = getClientIp(request);
   const session = getSessionFromRequest(request);
+  const clientIdentity = `${clientIp}:${session.userId}`;
+  const shieldState = isClientBlocked(clientIdentity);
+  if (shieldState.blocked) {
+    trackProcessFailure();
+    trackSecuritySignal(clientIdentity, "blocked_request");
+    return NextResponse.json(
+      {
+        error: {
+          code: "SECURITY_BLOCKED",
+          detailsCode: "PROCESS_SECURITY_BLOCKED",
+          message: "Request temporarily blocked by runtime security shield.",
+          requestId,
+        },
+        security: {
+          blockedUntil: shieldState.blockedUntil,
+          riskScore: shieldState.score,
+          guardianStatus: getGuardianSnapshot().status,
+        },
+      },
+      { status: 403, headers: { "x-correlation-id": correlationId } },
+    );
+  }
+
   const denied = ensureRole(session, ["agent"], requestId, "RBAC_PROCESS_DENIED");
   if (denied) {
     trackProcessFailure();
+    trackSecuritySignal(clientIdentity, "rbac_denied");
     return denied;
   }
 
-  const clientIp = getClientIp(request);
-  const clientIdentity = `${clientIp}:${session.userId}`;
   const rateLimit = checkRateLimit(
     clientIdentity,
     config.rateLimitPerMin,
@@ -473,6 +499,7 @@ export async function POST(request: Request) {
   );
   if (!rateLimit.allowed) {
     trackProcessFailure();
+    trackSecuritySignal(clientIdentity, "rate_limited");
     return NextResponse.json(
       {
         error: {
@@ -498,6 +525,7 @@ export async function POST(request: Request) {
 
     if (Buffer.byteLength(rawBody, "utf8") > maxBodyBytes) {
       trackProcessFailure();
+      trackSecuritySignal(clientIdentity, "payload_too_large");
       return NextResponse.json(
         {
           error: {
@@ -516,6 +544,7 @@ export async function POST(request: Request) {
       payload = JSON.parse(rawBody) as unknown;
     } catch {
       trackProcessFailure();
+      trackSecuritySignal(clientIdentity, "bad_json");
       return NextResponse.json(
         {
           error: {
@@ -556,6 +585,7 @@ export async function POST(request: Request) {
 
     trackProcessSuccess();
     trackLatency(result.meta.latencyMs);
+    trackSecuritySignal(clientIdentity, "success");
 
     const storeHistory = request.headers.get("x-store-history") !== "false";
     if (storeHistory && config.historyMode === "db") {
@@ -606,6 +636,19 @@ export async function POST(request: Request) {
 
     if (error instanceof Error) {
       const apiError = error as ApiProcessError;
+      if (apiError.code === "BAD_REQUEST") {
+        trackSecuritySignal(clientIdentity, "payload_invalid");
+      } else if (apiError.code === "SAFETY_CHECK_FAILED") {
+        trackSecuritySignal(clientIdentity, "safety_failed");
+      } else if (apiError.code === "VERIFIER_FAILED") {
+        trackSecuritySignal(clientIdentity, "verifier_rejected");
+      } else if (
+        apiError.code === "MODEL_ERROR" ||
+        apiError.code === "MODEL_SCHEMA_ERROR" ||
+        apiError.code === "GEMINI_CONFIG_ERROR"
+      ) {
+        trackSecuritySignal(clientIdentity, "model_failure");
+      }
       if (apiError.meta?.latencyMs != null) {
         trackLatency(apiError.meta.latencyMs);
       }

@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { POST, processPayload } from "@/app/api/process/route";
 import { GeminiConfigError } from "@/lib/gemini";
 import { resetRateLimiterForTests } from "@/lib/rateLimit";
+import { resetSecurityShieldForTests } from "@/lib/securityShield";
 
 describe("processPayload", () => {
   beforeEach(() => {
     resetRateLimiterForTests();
+    resetSecurityShieldForTests();
     delete process.env.DEMO_SAFE_MODE;
   });
 
@@ -210,6 +212,7 @@ describe("processPayload", () => {
 describe("POST /api/process", () => {
   beforeEach(() => {
     resetRateLimiterForTests();
+    resetSecurityShieldForTests();
     delete process.env.MAX_INPUT_CHARS;
     delete process.env.RATE_LIMIT_PER_MIN;
   });

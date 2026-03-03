@@ -10,6 +10,7 @@
 ## API
 
 - [ ] `/api/health` returns diagnostics
+- [ ] `/api/guardian` returns live guardian health state
 - [ ] `/status` public status page renders
 - [ ] `/api/process` enforces max input chars
 - [ ] `/api/process` enforces rate limit

@@ -20,7 +20,8 @@
    - Includes `/api/process` contract snapshot guard
 4. `npm run eval`
 5. `npm run build`
-6. Optional one-command check: `npm run judge:verify`
+6. `npm run scan`
+7. Optional one-command check: `npm run judge:verify`
 
 ## 3) Run app (2 minutes)
 1. `npm run dev`
@@ -39,6 +40,7 @@
    - Copy Markdown/JSON
    - Download `.md`, `.json`, `.txt`
 5. Open `/history` and open a session detail.
+6. Open `/api/guardian` to view real-time guardian status.
 
 ## Optional Wave 1 checks
 1. Open `/actions` and verify pending/approved/executed filters.

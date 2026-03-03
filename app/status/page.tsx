@@ -9,6 +9,7 @@ export default async function StatusPage() {
   const metrics = getObservabilitySnapshot();
   const dbHealthy = config.historyMode === "db" ? await pingDbConnection() : true;
   const degraded = !config.geminiKeyPresent && !config.demoSafeMode;
+  const guardianStatus = config.guardianEnabled ? "enabled" : "disabled";
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-8">
@@ -31,6 +32,9 @@ export default async function StatusPage() {
           <p>Feature Wave1: {config.featureWave1 ? "enabled" : "disabled"}</p>
           <p>Verifier policy: {config.verifierPolicy}</p>
           <p>Integrations mode: {config.integrationsMode}</p>
+          <p>Guardian: {guardianStatus}</p>
+          <p>Security block minutes: {config.securityBlockMinutes}</p>
+          <p>Security risk threshold: {config.securityRiskThreshold}</p>
           <p>DB connection: {dbHealthy ? "healthy" : "unavailable"}</p>
           <p>Average latency: {metrics.averageLatencyMs} ms</p>
           <p>P50 latency: {metrics.p50LatencyMs} ms</p>
@@ -52,6 +56,12 @@ export default async function StatusPage() {
             className="rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-1 text-sm font-semibold text-cyan-900"
           >
             Open /api/metrics
+          </Link>
+          <Link
+            href="/api/guardian"
+            className="rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-1 text-sm font-semibold text-cyan-900"
+          >
+            Open /api/guardian
           </Link>
           <Link
             href="/"

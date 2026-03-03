@@ -17,6 +17,10 @@ export type AppConfig = {
   featureWave1: boolean;
   verifierPolicy: VerifierPolicy;
   integrationsMode: IntegrationsMode;
+  guardianEnabled: boolean;
+  guardianIntervalMs: number;
+  securityBlockMinutes: number;
+  securityRiskThreshold: number;
 };
 
 const DEFAULT_RATE_LIMIT_PER_MIN = 20;
@@ -24,6 +28,9 @@ const DEFAULT_RATE_LIMIT_BURST_PER_10S = 6;
 const DEFAULT_MAX_INPUT_CHARS = 2000;
 export const DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
 const DEFAULT_PROMPT_VERSION = "v1";
+const DEFAULT_GUARDIAN_INTERVAL_MS = 10_000;
+const DEFAULT_SECURITY_BLOCK_MINUTES = 5;
+const DEFAULT_SECURITY_RISK_THRESHOLD = 100;
 
 function parsePositiveInt(
   value: string | undefined,
@@ -98,5 +105,24 @@ export function getAppConfig(): AppConfig {
     featureWave1: parseBoolean(process.env.FEATURE_WAVE1, true),
     verifierPolicy: parseVerifierPolicy(process.env.VERIFIER_POLICY),
     integrationsMode: parseIntegrationsMode(process.env.INTEGRATIONS_MODE),
+    guardianEnabled: parseBoolean(process.env.GUARDIAN_ENABLED, true),
+    guardianIntervalMs: parsePositiveInt(
+      process.env.GUARDIAN_INTERVAL_MS,
+      DEFAULT_GUARDIAN_INTERVAL_MS,
+      1000,
+      120_000,
+    ),
+    securityBlockMinutes: parsePositiveInt(
+      process.env.SECURITY_BLOCK_MINUTES,
+      DEFAULT_SECURITY_BLOCK_MINUTES,
+      1,
+      120,
+    ),
+    securityRiskThreshold: parsePositiveInt(
+      process.env.SECURITY_RISK_THRESHOLD,
+      DEFAULT_SECURITY_RISK_THRESHOLD,
+      50,
+      400,
+    ),
   };
 }
