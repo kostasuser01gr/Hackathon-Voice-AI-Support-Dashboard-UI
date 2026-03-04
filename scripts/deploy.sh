@@ -22,7 +22,7 @@ fi
 
 gcloud config set project "${PROJECT_ID}" >/dev/null
 
-billing_enabled="$(gcloud beta billing projects describe "${PROJECT_ID}" --format='value(billingEnabled)' 2>/dev/null || echo false)"
+billing_enabled="$(gcloud billing projects describe "${PROJECT_ID}" --format='value(billingEnabled)' 2>/dev/null || echo false)"
 if [[ "${billing_enabled}" != "True" && "${billing_enabled}" != "true" ]]; then
   echo "Billing is disabled for ${PROJECT_ID}. Cloud Run deployment requires billing."
   echo "Enable billing first, then rerun deploy."

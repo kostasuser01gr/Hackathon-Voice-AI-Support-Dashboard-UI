@@ -1,6 +1,6 @@
 voice-to-action-agent release bundle
-generated_at_utc=2026-03-03T16:34:21Z
-commit=863fd3f
+generated_at_utc=2026-03-04T15:52:46Z
+commit=9c723f1
 
 [public_urls]
 app=TODO
