@@ -17,6 +17,8 @@ import {
 import { normalizeLanguage, t } from "@/lib/i18n";
 import { deriveTranscriptInsights } from "@/lib/intelligence";
 import { DEFAULT_PRESET_ID, PRESETS, type PresetId } from "@/lib/presets";
+import type { PublicConfig } from "@/lib/publicConfig";
+import { safeFetchJson } from "@/lib/safeFetch";
 import { defaultSessionReview, makeApprovalPayloadHash } from "@/lib/session-meta";
 import {
   getUserSettingsServerSnapshot,
@@ -72,6 +74,7 @@ type SessionIdentity = {
 
 type VoiceActionDashboardProps = {
   initialSession?: StoredSession | null;
+  publicConfig?: PublicConfig;
 };
 
 const SAMPLE_SCRIPT = `Hi team, quick standup update. We finished the onboarding tooltip flow and fixed the profile save bug. Priya will ship analytics tracking by Thursday. I will prepare release notes and share them by Friday noon. Please schedule a 20-minute QA sync tomorrow morning, and send the customer success team a short status email after that meeting.`;
@@ -145,6 +148,7 @@ function SkeletonCard({ title }: { title: string }) {
 
 export function VoiceActionDashboard({
   initialSession = null,
+  publicConfig,
 }: VoiceActionDashboardProps) {
   const recognitionRef = useRef<RecognitionInstance | null>(null);
   const localHistory = useSyncExternalStore(
@@ -214,23 +218,25 @@ export function VoiceActionDashboard({
     let cancelled = false;
 
     const loadHealth = async () => {
-      try {
-        const response = await fetch("/api/health", { cache: "no-store" });
-        const payload = (await response.json()) as unknown;
-        const parsed = HealthResponseSchema.safeParse(payload);
+      const response = await safeFetchJson<unknown>("/api/health", {
+        cache: "no-store",
+        timeoutMs: 10000,
+      });
+      if (cancelled) {
+        return;
+      }
 
-        if (!cancelled) {
-          if (parsed.success) {
-            setHealth(parsed.data);
-            setHealthError("");
-          } else {
-            setHealthError("Diagnostics unavailable.");
-          }
-        }
-      } catch {
-        if (!cancelled) {
-          setHealthError("Could not load diagnostics.");
-        }
+      if (!response.ok) {
+        setHealthError("Could not load diagnostics.");
+        return;
+      }
+
+      const parsed = HealthResponseSchema.safeParse(response.data);
+      if (parsed.success) {
+        setHealth(parsed.data);
+        setHealthError("");
+      } else {
+        setHealthError("Diagnostics unavailable.");
       }
     };
 
@@ -245,22 +251,23 @@ export function VoiceActionDashboard({
     let cancelled = false;
 
     const loadSessionIdentity = async () => {
-      try {
-        const response = await fetch("/api/me", { cache: "no-store" });
-        const payload = (await response.json()) as {
-          session?: SessionIdentity;
-        };
-        if (!cancelled && payload.session) {
-          setSessionIdentity(payload.session);
-        }
-      } catch {
-        if (!cancelled) {
-          setSessionIdentity((previous) => ({
-            ...previous,
-            workspaceId: userSettings.workspaceId,
-          }));
-        }
+      const response = await safeFetchJson<{ session?: SessionIdentity }>("/api/me", {
+        cache: "no-store",
+        timeoutMs: 10000,
+      });
+      if (cancelled) {
+        return;
       }
+
+      if (response.ok && response.data.session) {
+        setSessionIdentity(response.data.session);
+        return;
+      }
+
+      setSessionIdentity((previous) => ({
+        ...previous,
+        workspaceId: userSettings.workspaceId,
+      }));
     };
 
     loadSessionIdentity();
@@ -428,10 +435,11 @@ export function VoiceActionDashboard({
           ? "bg-rose-100 text-rose-700"
           : "bg-slate-100 text-slate-700";
 
-  const processingDisabled =
-    loading ||
-    (!health?.diagnostics.geminiKeyPresent && !health?.diagnostics.demoSafeMode) ||
-    Boolean(healthError);
+  const demoSafeEnabled =
+    health?.diagnostics.demoSafeMode ?? publicConfig?.demoSafeMode ?? false;
+  const geminiConfigured =
+    health?.diagnostics.geminiKeyPresent ?? publicConfig?.geminiConfigured ?? false;
+  const processingDisabled = loading || (!geminiConfigured && !demoSafeEnabled) || Boolean(healthError);
   const localizedStatus =
     status === "Listening"
       ? t(language, "listening")
@@ -591,7 +599,7 @@ export function VoiceActionDashboard({
       return;
     }
 
-    if (!health?.diagnostics.geminiKeyPresent && !health?.diagnostics.demoSafeMode) {
+    if (!geminiConfigured && !demoSafeEnabled) {
       const message = "GEMINI_API_KEY is missing. Processing is disabled.";
       setErrorMessage(message);
       showToast("error", message);
@@ -855,7 +863,7 @@ export function VoiceActionDashboard({
               <p className="mt-1 text-xs text-slate-500">
                 {sessionIdentity.name} ({sessionIdentity.role}) · {sessionIdentity.email}
               </p>
-              {health?.diagnostics.demoSafeMode && (
+              {demoSafeEnabled && (
                 <p className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
                   Demo-safe mode enabled
                 </p>
@@ -923,16 +931,14 @@ export function VoiceActionDashboard({
           </div>
         </header>
 
-        {((!health?.diagnostics.geminiKeyPresent &&
-          !health?.diagnostics.demoSafeMode) ||
-          healthError) && (
+        {((!geminiConfigured && !demoSafeEnabled) || healthError) && (
           <div className="mb-4 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800">
             {healthError ||
               "GEMINI_API_KEY is missing. Processing is disabled until configured."}
           </div>
         )}
 
-        {health?.diagnostics.demoSafeMode && !healthError && (
+        {demoSafeEnabled && !healthError && (
           <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Demo-safe mode is active. Outputs are generated with deterministic local fallback when Gemini is unavailable.
           </div>

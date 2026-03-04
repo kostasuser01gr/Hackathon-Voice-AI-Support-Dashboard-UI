@@ -31,6 +31,9 @@ const defaultSettings: UserSettings = {
   lastValidation: null,
 };
 
+let cachedSettingsRaw: string | null = null;
+let cachedSettingsValue: UserSettings = defaultSettings;
+
 function isBrowser() {
   return typeof window !== "undefined";
 }
@@ -102,7 +105,11 @@ export function writeUserSettings(next: UserSettings) {
     return;
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  const normalized = parseSettings(next);
+  const raw = JSON.stringify(normalized);
+  cachedSettingsRaw = raw;
+  cachedSettingsValue = normalized;
+  window.localStorage.setItem(STORAGE_KEY, raw);
   window.dispatchEvent(new Event(SETTINGS_EVENT));
 }
 
@@ -132,7 +139,28 @@ export function subscribeUserSettings(listener: () => void) {
 }
 
 export function getUserSettingsSnapshot() {
-  return readUserSettings();
+  if (!isBrowser()) {
+    return defaultSettings;
+  }
+
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  if (raw === cachedSettingsRaw) {
+    return cachedSettingsValue;
+  }
+
+  cachedSettingsRaw = raw;
+  if (!raw) {
+    cachedSettingsValue = defaultSettings;
+    return cachedSettingsValue;
+  }
+
+  try {
+    cachedSettingsValue = parseSettings(JSON.parse(raw));
+  } catch {
+    cachedSettingsValue = defaultSettings;
+  }
+
+  return cachedSettingsValue;
 }
 
 export function getUserSettingsServerSnapshot() {

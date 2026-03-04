@@ -20,6 +20,9 @@ const MAX_LOCAL_SESSIONS = (() => {
   return Math.max(5, Math.min(200, parsed));
 })();
 
+let cachedHistoryRaw: string | null = null;
+let cachedHistorySnapshot: StoredSession[] = [];
+
 export type StoredSession = {
   id: string;
   createdAt: string;
@@ -341,12 +344,15 @@ function writeEnvelope(envelope: HistoryEnvelopeV4) {
     checksum: computeEnvelopeChecksum(envelope.sessions),
     sessions: envelope.sessions,
   };
+  const normalizedRaw = JSON.stringify(normalized);
+  cachedHistoryRaw = normalizedRaw;
+  cachedHistorySnapshot = normalized.sessions;
   const currentRaw = window.localStorage.getItem(STORAGE_KEY);
   if (currentRaw) {
     window.localStorage.setItem(BACKUP_STORAGE_KEY, currentRaw);
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+  window.localStorage.setItem(STORAGE_KEY, normalizedRaw);
   window.dispatchEvent(new Event(HISTORY_EVENT));
 }
 
@@ -454,7 +460,19 @@ export function subscribeLocalHistory(listener: () => void) {
 }
 
 export function getLocalHistorySnapshot() {
-  return listLocalSessions();
+  if (!isBrowser()) {
+    return [];
+  }
+
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  if (raw === cachedHistoryRaw) {
+    return cachedHistorySnapshot;
+  }
+
+  const nextEnvelope = readEnvelope();
+  cachedHistoryRaw = window.localStorage.getItem(STORAGE_KEY);
+  cachedHistorySnapshot = nextEnvelope.sessions;
+  return cachedHistorySnapshot;
 }
 
 export function getLocalHistoryServerSnapshot(): StoredSession[] {

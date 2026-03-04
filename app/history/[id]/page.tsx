@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
+import { ErrorBoundary } from "@/components/error-boundary";
 import { VoiceActionDashboard } from "@/components/voice-action-dashboard";
 import {
   getLocalHistoryServerSnapshot,
@@ -155,7 +156,11 @@ export default function HistoryDetailPage() {
       );
     }
 
-    return <VoiceActionDashboard key={dbSession.id} initialSession={dbSession} />;
+    return (
+      <ErrorBoundary>
+        <VoiceActionDashboard key={dbSession.id} initialSession={dbSession} />
+      </ErrorBoundary>
+    );
   }
 
   if (!localSession) {
@@ -177,5 +182,9 @@ export default function HistoryDetailPage() {
     );
   }
 
-  return <VoiceActionDashboard key={localSession.id} initialSession={localSession} />;
+  return (
+    <ErrorBoundary>
+      <VoiceActionDashboard key={localSession.id} initialSession={localSession} />
+    </ErrorBoundary>
+  );
 }
