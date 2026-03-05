@@ -1,11 +1,18 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import "server-only";
 
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+
+import { getAppConfig } from "@/lib/config";
+import { isDbHistoryEnabled, isShareTokenRevoked, revokeShareToken } from "@/lib/db";
 import type { StoredSession } from "@/lib/history";
+import { getRuntimeStateAdapter } from "@/lib/runtime-state";
 
 type SharePayload = {
-  v: 1;
+  v: 2;
   iat: number;
+  exp: number;
   session: StoredSession;
+  pwd?: string;
 };
 
 function getSecret() {
@@ -30,11 +37,40 @@ function signPayload(payloadEncoded: string) {
   return createHmac("sha256", getSecret()).update(payloadEncoded).digest("base64url");
 }
 
-export function createShareToken(session: StoredSession) {
+function hashPassword(password: string) {
+  return createHash("sha256")
+    .update(`share-password:${password}:${getSecret()}`)
+    .digest("hex");
+}
+
+export function hashShareToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export function createShareToken(
+  session: StoredSession,
+  options?: { password?: string; expiresInMs?: number },
+) {
+  const config = getAppConfig();
+  const ttlMs = Math.max(
+    60_000,
+    Math.min(
+      options?.expiresInMs ?? config.shareTokenTtlMs,
+      365 * 24 * 60 * 60 * 1000,
+    ),
+  );
+  const password = options?.password?.trim();
+
+  if (config.shareTokenRequirePassword && !password) {
+    throw new Error("Share password is required by SHARE_TOKEN_REQUIRE_PASSWORD=true.");
+  }
+
   const payload: SharePayload = {
-    v: 1,
+    v: 2,
     iat: Date.now(),
+    exp: Date.now() + ttlMs,
     session,
+    ...(password ? { pwd: hashPassword(password) } : {}),
   };
 
   const payloadEncoded = toBase64Url(JSON.stringify(payload));
@@ -42,7 +78,7 @@ export function createShareToken(session: StoredSession) {
   return `${payloadEncoded}.${signature}`;
 }
 
-export function parseShareToken(token: string): SharePayload | null {
+export function parseShareTokenUnsafe(token: string): SharePayload | null {
   const [payloadEncoded, signature] = token.split(".");
   if (!payloadEncoded || !signature) {
     return null;
@@ -62,7 +98,13 @@ export function parseShareToken(token: string): SharePayload | null {
   try {
     const raw = fromBase64Url(payloadEncoded);
     const parsed = JSON.parse(raw) as SharePayload;
-    if (parsed.v !== 1 || !parsed.session?.id || !parsed.session?.data) {
+    if (
+      parsed.v !== 2 ||
+      !parsed.session?.id ||
+      !parsed.session?.data ||
+      typeof parsed.exp !== "number" ||
+      parsed.exp <= 0
+    ) {
       return null;
     }
 
@@ -70,4 +112,52 @@ export function parseShareToken(token: string): SharePayload | null {
   } catch {
     return null;
   }
+}
+
+async function isTokenHashRevoked(tokenHash: string) {
+  if (isDbHistoryEnabled()) {
+    return isShareTokenRevoked(tokenHash);
+  }
+
+  const raw = await getRuntimeStateAdapter().get(`share:revoked:${tokenHash}`);
+  return raw === "1";
+}
+
+export async function parseShareToken(
+  token: string,
+  options?: { password?: string },
+): Promise<SharePayload | null> {
+  const parsed = parseShareTokenUnsafe(token);
+  if (!parsed) {
+    return null;
+  }
+
+  if (Date.now() > parsed.exp) {
+    return null;
+  }
+
+  if (parsed.pwd) {
+    const provided = options?.password?.trim();
+    if (!provided || hashPassword(provided) !== parsed.pwd) {
+      return null;
+    }
+  }
+
+  const tokenHash = hashShareToken(token);
+  if (await isTokenHashRevoked(tokenHash)) {
+    return null;
+  }
+
+  return parsed;
+}
+
+export async function revokeShareTokenByToken(token: string, reason?: string) {
+  const hash = hashShareToken(token);
+  if (isDbHistoryEnabled()) {
+    await revokeShareToken(hash, reason);
+    return;
+  }
+
+  const ttlSeconds = Math.max(60, Math.round(getAppConfig().shareTokenTtlMs / 1000));
+  await getRuntimeStateAdapter().set(`share:revoked:${hash}`, "1", ttlSeconds);
 }

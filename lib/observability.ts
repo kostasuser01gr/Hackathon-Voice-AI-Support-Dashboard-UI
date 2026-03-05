@@ -3,6 +3,7 @@ type MetricState = {
   processSuccesses: number;
   processFailures: number;
   safetyFailures: number;
+  geminiCacheHits: number;
   latencies: number[];
   integrationJobs: {
     queued: number;
@@ -17,6 +18,7 @@ const state: MetricState = {
   processSuccesses: 0,
   processFailures: 0,
   safetyFailures: 0,
+  geminiCacheHits: 0,
   latencies: [],
   integrationJobs: {
     queued: 0,
@@ -40,6 +42,10 @@ export function trackProcessSuccess() {
 
 export function trackSafetyFailure() {
   state.safetyFailures += 1;
+}
+
+export function trackGeminiCacheHit() {
+  state.geminiCacheHits += 1;
 }
 
 export function trackLatency(latencyMs: number) {
@@ -84,6 +90,7 @@ export function getObservabilitySnapshot() {
     processSuccesses: state.processSuccesses,
     processFailures: state.processFailures,
     safetyFailures: state.safetyFailures,
+    geminiCacheHits: state.geminiCacheHits,
     averageLatencyMs,
     p50LatencyMs: percentile(state.latencies, 50),
     p95LatencyMs: percentile(state.latencies, 95),
@@ -126,6 +133,7 @@ export function resetObservabilityForTests() {
   state.processSuccesses = 0;
   state.processFailures = 0;
   state.safetyFailures = 0;
+  state.geminiCacheHits = 0;
   state.latencies = [];
   state.integrationJobs = {
     queued: 0,

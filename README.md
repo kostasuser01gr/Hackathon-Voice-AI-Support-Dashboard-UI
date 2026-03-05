@@ -146,14 +146,28 @@ Optional:
 - `FEATURE_WAVE1` (default `true`)
 - `VERIFIER_POLICY=warn|repair|reject` (default `warn`)
 - `INTEGRATIONS_MODE=mock|live` (default `mock`)
+- `RUNTIME_STATE_MODE=memory|redis` (default `memory`)
+- `REDIS_URL` (required when `RUNTIME_STATE_MODE=redis`)
 - `SHARE_TOKEN_SECRET`
+- `SHARE_TOKEN_TTL_MS` (default `604800000` = 7 days)
+- `SHARE_TOKEN_REQUIRE_PASSWORD=true|false` (default `false`)
 - `SESSION_SIGNING_SECRET` (recommended for production)
+- `REQUIRE_SIGNED_SESSION_IN_PROD=true|false` (default `true`)
+- `ALLOW_HEADER_SESSION_FALLBACK_IN_PROD=true|false` (default `false`)
+- `MUTATION_IDEMPOTENCY_REQUIRED=true|false` (default `false`)
+- `FEATURE_V2_APIS=true|false` (default `true`)
+- `SECONDARY_GEMINI_MODEL`
+- `GEMINI_TIMEOUT_MS` (default `10000`)
+- `GEMINI_BREAKER_FAILURE_THRESHOLD` (default `5`)
+- `GEMINI_BREAKER_COOLDOWN_MS` (default `30000`)
 - `NEXT_PUBLIC_MAX_LOCAL_SESSIONS` (default `25`, min `5`, max `200`)
 - `GUARDIAN_ENABLED=true|false` (default `true`)
 - `GUARDIAN_INTERVAL_MS` (default `10000`)
 - `SECURITY_BLOCK_MINUTES` (default `5`)
 - `SECURITY_RISK_THRESHOLD` (default `100`)
 - `DATABASE_URL` (required only when `HISTORY_MODE=db`)
+- `CLOUD_TASKS_QUEUE`, `CLOUD_TASKS_LOCATION` (optional)
+- `CANARY_WORKSPACE_ALLOWLIST` (comma-separated workspace IDs)
 
 See `.env.local.example`.
 
@@ -182,6 +196,7 @@ DB:
 - `scripts/precheck-cloudrun.sh` billing/API/env preflight
 - `scripts/release-bundle.sh` judge artifact bundle generator
 - `scripts/judge-verify.sh` one-command zero-to-pass verification
+- `scripts/migrate.ts` SQL migration runner (`npm run db:migrate`)
 - `scripts/verify-screenshots.sh` required screenshot placeholders check
 - `cloudbuild.yaml` Cloud Build pipeline deploy
 - `.github/workflows/deploy-gcp.yml` GitHub Actions deploy to GCP

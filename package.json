@@ -19,10 +19,13 @@
     "deploy:precheck": "./scripts/precheck-cloudrun.sh",
     "release:bundle": "./scripts/release-bundle.sh",
     "verify:screenshots": "./scripts/verify-screenshots.sh",
-    "judge:verify": "./scripts/judge-verify.sh"
+    "judge:verify": "./scripts/judge-verify.sh",
+    "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
+    "@google-cloud/tasks": "^6.2.1",
     "@google/genai": "^1.43.0",
+    "ioredis": "^5.8.2",
     "next": "16.1.6",
     "pg": "^8.19.0",
     "react": "19.2.3",

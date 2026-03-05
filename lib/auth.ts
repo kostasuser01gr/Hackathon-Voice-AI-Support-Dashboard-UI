@@ -48,6 +48,14 @@ function getSessionSigningSecret() {
   return process.env.SESSION_SIGNING_SECRET?.trim() || null;
 }
 
+function requireSignedSessionInProd() {
+  const raw = process.env.REQUIRE_SIGNED_SESSION_IN_PROD?.trim().toLowerCase();
+  if (!raw) {
+    return true;
+  }
+  return ["1", "true", "yes", "on"].includes(raw);
+}
+
 function signPayload(payloadBase64Url: string, secret: string) {
   const hmac = createHmac("sha256", secret);
   hmac.update(`${SESSION_SIGNATURE_PREFIX}.${payloadBase64Url}`);
@@ -69,12 +77,19 @@ function verifySignature(payloadBase64Url: string, signatureBase64Url: string, s
 function decodeSession(raw: string): ParsedSessionCookie | null {
   try {
     const secret = getSessionSigningSecret();
+    const requireSigned = process.env.NODE_ENV === "production" && requireSignedSessionInProd();
+    if (requireSigned && !secret) {
+      return null;
+    }
     const [payloadBase64Url, signatureBase64Url, ...rest] = raw.split(".");
     if (!payloadBase64Url || rest.length > 0) {
       return null;
     }
 
     const signed = Boolean(signatureBase64Url);
+    if (requireSigned && !signed) {
+      return null;
+    }
     if (secret) {
       if (!signed || !signatureBase64Url) {
         return null;
@@ -102,6 +117,12 @@ function decodeSession(raw: string): ParsedSessionCookie | null {
 function encodeSession(session: SessionData) {
   const payloadBase64Url = Buffer.from(JSON.stringify(session), "utf8").toString("base64url");
   const secret = getSessionSigningSecret();
+  const requireSigned = process.env.NODE_ENV === "production" && requireSignedSessionInProd();
+  if (requireSigned && !secret) {
+    throw new Error(
+      "SESSION_SIGNING_SECRET is required when REQUIRE_SIGNED_SESSION_IN_PROD=true.",
+    );
+  }
   if (!secret) {
     return payloadBase64Url;
   }

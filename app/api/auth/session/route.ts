@@ -34,8 +34,23 @@ export async function POST(request: Request) {
     );
   }
 
-  const session = await setServerSession(parsed.data);
-  return NextResponse.json({ session });
+  try {
+    const session = await setServerSession(parsed.data);
+    return NextResponse.json({ session });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "SESSION_CONFIG_ERROR",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Session signing configuration is invalid.",
+        },
+      },
+      { status: 500 },
+    );
+  }
 }
 
 export async function DELETE() {

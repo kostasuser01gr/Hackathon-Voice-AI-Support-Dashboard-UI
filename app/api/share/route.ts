@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireRoleFromRequest } from "@/lib/api-guards";
+import { requireRoleAndWorkspaceFromRequest } from "@/lib/api-guards";
 import { getPresetById } from "@/lib/presets";
 import { defaultSessionReview, makeApprovalPayloadHash } from "@/lib/session-meta";
 import { createShareToken } from "@/lib/share";
@@ -30,6 +30,7 @@ const BodySchema = z
           entities: z.array(z.string()).default([]),
           topics: z.array(z.string()).default([]),
           urgency: z.enum(["low", "medium", "high"]).default("low"),
+          sentiment: z.enum(["negative", "neutral", "positive"]).default("neutral"),
           openLoops: z.array(z.string()).default([]),
           openLoopsCount: z.number().int().min(0).default(0),
         }),
@@ -41,7 +42,7 @@ const BodySchema = z
         }),
       })
       .default({
-        index: { entities: [], topics: [], urgency: "low", openLoops: [], openLoopsCount: 0 },
+        index: { entities: [], topics: [], urgency: "low", sentiment: "neutral", openLoops: [], openLoopsCount: 0 },
         verifier: { ok: true, score: 100, flags: [], policy: "warn" },
       }),
     approvalEvents: z
@@ -58,6 +59,8 @@ const BodySchema = z
         }),
       )
       .default([]),
+    sharePassword: z.string().trim().min(4).max(100).optional(),
+    expiresInMs: z.number().int().min(60_000).max(365 * 24 * 60 * 60 * 1000).optional(),
     data: ProcessResponseSchema,
   })
   .strict();
@@ -66,13 +69,15 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
-  const { denied } = requireRoleFromRequest(
+  const correlationId = request.headers.get("x-correlation-id") ?? requestId;
+  const { denied } = await requireRoleAndWorkspaceFromRequest(
     request,
     requestId,
     ["agent"],
     "RBAC_SHARE_DENIED",
   );
   if (denied) {
+    denied.headers.set("x-correlation-id", correlationId);
     return denied;
   }
 
@@ -88,26 +93,50 @@ export async function POST(request: Request) {
           requestId,
         },
       },
-      { status: 400 },
+      { status: 400, headers: { "x-correlation-id": correlationId } },
     );
   }
 
-  const token = createShareToken({
-    ...parsed.data,
-    presetId: getPresetById(parsed.data.presetId).id,
-    approvalEvents: parsed.data.approvalEvents.map((event) => ({
-      ...event,
-      payloadHash:
-        event.payloadHash ??
-        makeApprovalPayloadHash({
-          sessionId: event.sessionId,
-          actorId: event.actorId,
-          actorRole: event.actorRole,
-          action: event.action,
-          note: event.note,
-          timestamp: event.timestamp,
-        }),
-    })),
-  });
-  return NextResponse.json({ token, requestId });
+  try {
+    const { sharePassword, expiresInMs, ...sessionPayload } = parsed.data;
+    const token = createShareToken(
+      {
+        ...sessionPayload,
+        presetId: getPresetById(sessionPayload.presetId).id,
+        approvalEvents: sessionPayload.approvalEvents.map((event) => ({
+          ...event,
+          payloadHash:
+            event.payloadHash ??
+            makeApprovalPayloadHash({
+              sessionId: event.sessionId,
+              actorId: event.actorId,
+              actorRole: event.actorRole,
+              action: event.action,
+              note: event.note,
+              timestamp: event.timestamp,
+            }),
+        })),
+      },
+      {
+        password: sharePassword,
+        expiresInMs,
+      },
+    );
+    return NextResponse.json(
+      { token, requestId },
+      { headers: { "x-correlation-id": correlationId } },
+    );
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "SHARE_TOKEN_ERROR",
+          detailsCode: "SHARE_TOKEN_CREATE_FAILED",
+          message: error instanceof Error ? error.message : "Could not create share token.",
+          requestId,
+        },
+      },
+      { status: 400, headers: { "x-correlation-id": correlationId } },
+    );
+  }
 }

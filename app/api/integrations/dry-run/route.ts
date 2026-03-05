@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireRoleFromRequest, requireWave1 } from "@/lib/api-guards";
+import { requireRoleAndWorkspaceFromRequest, requireWave1 } from "@/lib/api-guards";
 import { getAppConfig } from "@/lib/config";
 import { enqueueIntegrationExecution } from "@/lib/jobQueue";
 
@@ -17,18 +17,20 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
+  const correlationId = request.headers.get("x-correlation-id") ?? requestId;
   const featureBlocked = requireWave1(requestId);
   if (featureBlocked) {
     return featureBlocked;
   }
 
-  const { session, denied } = requireRoleFromRequest(
+  const { session, denied } = await requireRoleAndWorkspaceFromRequest(
     request,
     requestId,
     ["agent"],
     "RBAC_INTEGRATION_DRY_RUN_DENIED",
   );
   if (denied) {
+    denied.headers.set("x-correlation-id", correlationId);
     return denied;
   }
 
@@ -44,7 +46,7 @@ export async function POST(request: Request) {
           requestId,
         },
       },
-      { status: 400 },
+      { status: 400, headers: { "x-correlation-id": correlationId } },
     );
   }
 
@@ -68,6 +70,6 @@ export async function POST(request: Request) {
       reused: enqueued.reused,
       requestId,
     },
-    { status: 202 },
+    { status: 202, headers: { "x-correlation-id": correlationId } },
   );
 }

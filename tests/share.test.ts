@@ -1,9 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createShareToken, parseShareToken } from "@/lib/share";
+import {
+  createShareToken,
+  parseShareToken,
+  revokeShareTokenByToken,
+} from "@/lib/share";
+import { resetMemoryRuntimeStateForTests } from "@/lib/runtime-state/memory";
+
+afterEach(() => {
+  resetMemoryRuntimeStateForTests();
+  vi.useRealTimers();
+});
 
 describe("share tokens", () => {
-  it("creates and validates share token", () => {
+  it("creates and validates share token", async () => {
     const token = createShareToken({
       id: "s1",
       createdAt: "2026-03-02T10:00:00.000Z",
@@ -19,13 +29,14 @@ describe("share tokens", () => {
         comments: [],
       },
       analysis: {
-          index: {
-            entities: [],
-            topics: [],
-            urgency: "low",
-            openLoops: [],
-            openLoopsCount: 0,
-          },
+        index: {
+          entities: [],
+          topics: [],
+          urgency: "low",
+          sentiment: "neutral",
+          openLoops: [],
+          openLoopsCount: 0,
+        },
         verifier: {
           ok: true,
           score: 100,
@@ -56,12 +67,126 @@ describe("share tokens", () => {
           latencyMs: 12,
           validation: "passed",
           fallbackUsed: false,
+          approvalRequired: false,
         },
       },
     });
 
-    const parsed = parseShareToken(token);
+    const parsed = await parseShareToken(token);
     expect(parsed).not.toBeNull();
     expect(parsed?.session.id).toBe("s1");
+  });
+
+  it("expires share token based on configured ttl", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-02T10:00:00.000Z"));
+    const token = createShareToken(
+      {
+        id: "s2",
+        createdAt: "2026-03-02T10:00:00.000Z",
+        workspaceId: "default-workspace",
+        presetId: "support_recap",
+        pinned: false,
+        tags: [],
+        review: {
+          emailApproved: false,
+          tasksApproved: false,
+          executed: false,
+          taskOwners: {},
+          comments: [],
+        },
+        analysis: {
+          index: {
+            entities: [],
+            topics: [],
+            urgency: "low",
+            sentiment: "neutral",
+            openLoops: [],
+            openLoopsCount: 0,
+          },
+          verifier: {
+            ok: true,
+            score: 100,
+            flags: [],
+            policy: "warn",
+          },
+        },
+        approvalEvents: [],
+        data: {
+          inputMode: "text",
+          transcript: "hello",
+          summary: "hello",
+          actions: { taskList: [], emailDraft: "hello" },
+          auditTrail: [],
+          meta: {
+            requestId: "req-2",
+            model: "gemini-2.0-flash",
+            latencyMs: 1,
+            validation: "passed",
+            fallbackUsed: false,
+            approvalRequired: false,
+          },
+        },
+      },
+      { expiresInMs: 60_000 },
+    );
+
+    vi.setSystemTime(new Date("2026-03-02T10:02:02.000Z"));
+    const parsed = await parseShareToken(token);
+    expect(parsed).toBeNull();
+  });
+
+  it("rejects revoked token", async () => {
+    const token = createShareToken({
+      id: "s3",
+      createdAt: "2026-03-02T10:00:00.000Z",
+      workspaceId: "default-workspace",
+      presetId: "support_recap",
+      pinned: false,
+      tags: [],
+      review: {
+        emailApproved: false,
+        tasksApproved: false,
+        executed: false,
+        taskOwners: {},
+        comments: [],
+      },
+      analysis: {
+        index: {
+          entities: [],
+          topics: [],
+          urgency: "low",
+          sentiment: "neutral",
+          openLoops: [],
+          openLoopsCount: 0,
+        },
+        verifier: {
+          ok: true,
+          score: 100,
+          flags: [],
+          policy: "warn",
+        },
+      },
+      approvalEvents: [],
+      data: {
+        inputMode: "text",
+        transcript: "hello",
+        summary: "hello",
+        actions: { taskList: [], emailDraft: "hello" },
+        auditTrail: [],
+        meta: {
+          requestId: "req-3",
+          model: "gemini-2.0-flash",
+          latencyMs: 1,
+          validation: "passed",
+          fallbackUsed: false,
+          approvalRequired: false,
+        },
+      },
+    });
+
+    await revokeShareTokenByToken(token, "test");
+    const parsed = await parseShareToken(token);
+    expect(parsed).toBeNull();
   });
 });

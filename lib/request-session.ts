@@ -27,7 +27,10 @@ function canUseHeaderFallback() {
     return true;
   }
 
-  return process.env.DEMO_SAFE_MODE?.trim().toLowerCase() === "true";
+  const allowInProd = process.env.ALLOW_HEADER_SESSION_FALLBACK_IN_PROD
+    ?.trim()
+    .toLowerCase();
+  return ["1", "true", "yes", "on"].includes(allowInProd ?? "");
 }
 
 export function getSessionContextFromRequest(request: Request): {

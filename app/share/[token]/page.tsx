@@ -1,15 +1,17 @@
 import Link from "next/link";
 
-import { VoiceActionDashboard } from "@/components/voice-action-dashboard";
+import { SharedReportView } from "@/components/shared-report-view";
 import { parseShareToken } from "@/lib/share";
 
 type PageProps = {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ pw?: string }>;
 };
 
-export default async function SharedSessionPage({ params }: PageProps) {
+export default async function SharedSessionPage({ params, searchParams }: PageProps) {
   const { token } = await params;
-  const parsed = parseShareToken(token);
+  const { pw } = await searchParams;
+  const parsed = await parseShareToken(token, { password: pw });
 
   if (!parsed) {
     return (
@@ -17,7 +19,7 @@ export default async function SharedSessionPage({ params }: PageProps) {
         <div className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-6 text-center">
           <h1 className="text-2xl font-semibold">Invalid share link</h1>
           <p className="mt-2 text-sm text-slate-600">
-            This link is invalid or expired.
+            This link is invalid, revoked, expired, or password-protected.
           </p>
           <Link
             href="/"
@@ -30,5 +32,5 @@ export default async function SharedSessionPage({ params }: PageProps) {
     );
   }
 
-  return <VoiceActionDashboard initialSession={parsed.session} />;
+  return <SharedReportView session={parsed.session} />;
 }

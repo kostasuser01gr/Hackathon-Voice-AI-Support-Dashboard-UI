@@ -20,8 +20,8 @@ describe("quality scoring", () => {
 describe("PII redaction", () => {
   it("redacts phone numbers and emails", () => {
     const redacted = redactPiiText("Contact me at test@example.com or +30 123 456 7890.");
-    expect(redacted.output).toContain("[redacted-email]");
-    expect(redacted.output).toContain("[redacted-phone]");
+    expect(redacted.output).toContain("[REDACTED_EMAIL]");
+    expect(redacted.output).toContain("[REDACTED_PHONE]");
     expect(redacted.redactions).toBeGreaterThanOrEqual(2);
   });
 });

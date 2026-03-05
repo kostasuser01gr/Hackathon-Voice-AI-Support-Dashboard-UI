@@ -105,8 +105,9 @@ export function buildDemoSafeModelOutput(params: DemoSafeParams): ProcessRespons
       requestId: params.requestId,
       model: "demo-safe-local-v1",
       latencyMs: 1,
-      validation: "passed",
+      validation: "passed" as const,
       fallbackUsed: true,
+      approvalRequired: false,
     },
   };
 }

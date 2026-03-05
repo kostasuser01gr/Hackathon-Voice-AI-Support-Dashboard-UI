@@ -200,6 +200,7 @@ describe("local history v4 migration", () => {
           entities: [],
           topics: [],
           urgency: "low",
+          sentiment: "neutral",
           openLoops: [],
           openLoopsCount: 0,
         },
@@ -252,6 +253,7 @@ describe("local history v4 migration", () => {
           latencyMs: 10,
           validation: "passed",
           fallbackUsed: false,
+          approvalRequired: false,
         },
       },
     });

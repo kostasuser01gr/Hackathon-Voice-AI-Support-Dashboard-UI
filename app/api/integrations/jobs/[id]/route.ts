@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { requireRoleFromRequest, requireWave1 } from "@/lib/api-guards";
-import { getIntegrationJob } from "@/lib/jobQueue";
+import { requireRoleAndWorkspaceFromRequest, requireWave1 } from "@/lib/api-guards";
+import { getIntegrationJobWithFallback } from "@/lib/jobQueue";
 
 export const runtime = "nodejs";
 
@@ -11,23 +11,25 @@ type RouteParams = {
 
 export async function GET(request: Request, context: RouteParams) {
   const requestId = crypto.randomUUID();
+  const correlationId = request.headers.get("x-correlation-id") ?? requestId;
   const featureBlocked = requireWave1(requestId);
   if (featureBlocked) {
     return featureBlocked;
   }
 
-  const { session, denied } = requireRoleFromRequest(
+  const { session, denied } = await requireRoleAndWorkspaceFromRequest(
     request,
     requestId,
     ["viewer"],
     "RBAC_INTEGRATION_JOB_READ_DENIED",
   );
   if (denied) {
+    denied.headers.set("x-correlation-id", correlationId);
     return denied;
   }
 
   const { id } = await context.params;
-  const job = getIntegrationJob(id);
+  const job = await getIntegrationJobWithFallback(id);
 
   if (!job || job.workspaceId !== session.workspaceId) {
     return NextResponse.json(
@@ -39,12 +41,15 @@ export async function GET(request: Request, context: RouteParams) {
           requestId,
         },
       },
-      { status: 404 },
+      { status: 404, headers: { "x-correlation-id": correlationId } },
     );
   }
 
-  return NextResponse.json({
-    job,
-    requestId,
-  });
+  return NextResponse.json(
+    {
+      job,
+      requestId,
+    },
+    { headers: { "x-correlation-id": correlationId } },
+  );
 }

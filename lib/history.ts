@@ -65,6 +65,7 @@ function emptyAnalysis(): SessionAnalysis {
       entities: [],
       topics: [],
       urgency: "low",
+      sentiment: "neutral",
       openLoops: [],
       openLoopsCount: 0,
     },
@@ -182,6 +183,12 @@ function normalizeSession(entry: LegacySession): StoredSession | null {
           analysis.index?.urgency === "low"
             ? analysis.index.urgency
             : "low",
+        sentiment:
+          analysis.index?.sentiment === "positive" ||
+          analysis.index?.sentiment === "negative" ||
+          analysis.index?.sentiment === "neutral"
+            ? analysis.index.sentiment
+            : "neutral",
         openLoops: Array.isArray(analysis.index?.openLoops) ? analysis.index.openLoops : [],
         openLoopsCount:
           typeof analysis.index?.openLoopsCount === "number" &&

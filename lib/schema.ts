@@ -46,6 +46,7 @@ export const ProcessMetaSchema = z
     latencyMs: z.number().int().min(0),
     validation: z.enum(["passed", "failed"]),
     fallbackUsed: z.boolean(),
+    approvalRequired: z.boolean().default(false),
   })
   .strict();
 
@@ -129,6 +130,7 @@ export const ProcessResponseJsonSchema = {
         "latencyMs",
         "validation",
         "fallbackUsed",
+        "approvalRequired"
       ],
       properties: {
         requestId: {
@@ -147,6 +149,9 @@ export const ProcessResponseJsonSchema = {
         fallbackUsed: {
           type: "boolean",
         },
+        approvalRequired: {
+          type: "boolean",
+        }
       },
       required: [
         "requestId",
@@ -154,6 +159,7 @@ export const ProcessResponseJsonSchema = {
         "latencyMs",
         "validation",
         "fallbackUsed",
+        "approvalRequired"
       ],
     },
   },
@@ -206,15 +212,24 @@ export const HealthDiagnosticsSchema = z
     promptVersion: z.string(),
     shareTokenSecretPresent: z.boolean(),
     sessionSigningSecretPresent: z.boolean(),
+    runtimeStateMode: z.enum(["memory", "redis"]).optional(),
+    redisConfigured: z.boolean().optional(),
     guardianEnabled: z.boolean(),
     guardianIntervalMs: z.number().int().positive(),
     securityBlockMinutes: z.number().int().positive(),
     securityRiskThreshold: z.number().int().positive(),
+    featureV2Apis: z.boolean().optional(),
+    mutationIdempotencyRequired: z.boolean().optional(),
+    shareTokenTtlMs: z.number().int().positive().optional(),
+    shareTokenRequirePassword: z.boolean().optional(),
+    geminiTimeoutMs: z.number().int().positive().optional(),
+    canaryWorkspaceAllowlistSize: z.number().int().nonnegative().optional(),
     observability: z.object({
       processRequests: z.number().int().nonnegative(),
       processSuccesses: z.number().int().nonnegative(),
       processFailures: z.number().int().nonnegative(),
       safetyFailures: z.number().int().nonnegative(),
+      geminiCacheHits: z.number().int().nonnegative(),
       averageLatencyMs: z.number().int().nonnegative(),
       p50LatencyMs: z.number().int().nonnegative(),
       p95LatencyMs: z.number().int().nonnegative(),
@@ -226,6 +241,7 @@ export const HealthDiagnosticsSchema = z
         retried: z.number().int().nonnegative(),
       }),
     }),
+
     guardian: z.object({
       enabled: z.boolean(),
       status: z.enum(["healthy", "degraded", "critical"]),

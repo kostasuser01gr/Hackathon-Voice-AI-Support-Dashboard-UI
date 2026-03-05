@@ -102,6 +102,7 @@ function defaultAnalysis() {
       entities: [],
       topics: [],
       urgency: "low" as const,
+      sentiment: "neutral" as const,
       openLoops: [],
       openLoopsCount: 0,
     },
@@ -678,6 +679,7 @@ export function VoiceActionDashboard({
         .map((topic) => topic.trim())
         .filter(Boolean);
       const urgencyRaw = response.headers.get("x-session-urgency");
+      const sentimentRaw = response.headers.get("x-session-sentiment");
       const insightsFromTranscript = deriveTranscriptInsights(processed.transcript, processed.actions.taskList);
       const nextAnalysis: StoredSession["analysis"] = {
         index: {
@@ -687,6 +689,10 @@ export function VoiceActionDashboard({
             urgencyRaw === "high" || urgencyRaw === "medium" || urgencyRaw === "low"
               ? urgencyRaw
               : "low",
+          sentiment:
+            sentimentRaw === "positive" || sentimentRaw === "negative" || sentimentRaw === "neutral"
+              ? sentimentRaw
+              : "neutral",
           openLoops: insightsFromTranscript.openLoops,
           openLoopsCount: insightsFromTranscript.openLoops.length,
         },

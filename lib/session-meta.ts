@@ -1,11 +1,13 @@
 import type { IntegrationsMode, VerifierPolicy } from "@/lib/config";
 
 export type SessionUrgency = "low" | "medium" | "high";
+export type SessionSentiment = "negative" | "neutral" | "positive";
 
 export type SessionIndex = {
   entities: string[];
   topics: string[];
   urgency: SessionUrgency;
+  sentiment: SessionSentiment;
   openLoops: string[];
   openLoopsCount: number;
 };

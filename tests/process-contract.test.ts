@@ -51,6 +51,7 @@ function buildStubResponse(
         latencyMs: 12,
         validation: "passed" as const,
         fallbackUsed: false,
+        approvalRequired: false,
       },
     },
     model: "gemini-2.0-flash",
@@ -58,7 +59,7 @@ function buildStubResponse(
 }
 
 describe("/api/process response contract", () => {
-  it("preserves top-level and nested property order", async () => {
+  it("preserves top-level key contract", async () => {
     const response = await processPayload(
       {
         inputMode: "text",
@@ -92,6 +93,7 @@ describe("/api/process response contract", () => {
       "latencyMs",
       "validation",
       "fallbackUsed",
+      "approvalRequired",
     ]);
   });
 

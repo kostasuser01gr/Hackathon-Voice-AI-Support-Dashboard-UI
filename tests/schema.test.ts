@@ -40,6 +40,7 @@ describe("schema contracts", () => {
         latencyMs: 20,
         validation: "passed",
         fallbackUsed: false,
+        approvalRequired: false,
       },
       extra: true,
     };

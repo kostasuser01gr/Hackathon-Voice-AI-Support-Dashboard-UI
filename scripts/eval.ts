@@ -115,6 +115,7 @@ function makeStubResponse(params: {
       latencyMs: 42,
       validation: "passed",
       fallbackUsed: false,
+      approvalRequired: false,
     },
   };
 }
