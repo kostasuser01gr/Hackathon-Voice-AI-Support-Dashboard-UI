@@ -400,6 +400,12 @@
       "commit": "9591f9b",
       "version": "nightly",
       "notes": "Automated nightly gate run"
+    },
+    {
+      "date": "2026-08-04T03:06:00Z",
+      "commit": "25dddc5",
+      "version": "nightly",
+      "notes": "Automated nightly gate run"
     }
   ]
 }
