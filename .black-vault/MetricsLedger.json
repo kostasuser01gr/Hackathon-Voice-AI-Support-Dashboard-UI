@@ -448,6 +448,12 @@
       "commit": "04cb30a",
       "version": "nightly",
       "notes": "Automated nightly gate run"
+    },
+    {
+      "date": "2026-08-12T02:57:16Z",
+      "commit": "c17ee4a",
+      "version": "nightly",
+      "notes": "Automated nightly gate run"
     }
   ]
 }
