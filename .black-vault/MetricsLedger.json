@@ -496,6 +496,12 @@
       "commit": "b2f6409",
       "version": "nightly",
       "notes": "Automated nightly gate run"
+    },
+    {
+      "date": "2026-08-20T02:30:15Z",
+      "commit": "18f120a",
+      "version": "nightly",
+      "notes": "Automated nightly gate run"
     }
   ]
 }
