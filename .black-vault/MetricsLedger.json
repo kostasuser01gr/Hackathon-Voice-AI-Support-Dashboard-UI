@@ -538,6 +538,12 @@
       "commit": "a47ddb4",
       "version": "nightly",
       "notes": "Automated nightly gate run"
+    },
+    {
+      "date": "2026-08-27T03:47:11Z",
+      "commit": "f0fe9d0",
+      "version": "nightly",
+      "notes": "Automated nightly gate run"
     }
   ]
 }
